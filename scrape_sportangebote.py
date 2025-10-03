@@ -1,0 +1,299 @@
+"""
+Dieses Python-Skript sammelt das Sportprogramm (Angebote, Kurse, Termine) und speichert
+es in Supabase. Es ist absichtlich für absolute Anfänger erklärt.
+
+Was wird gespeichert? Drei Ebenen:
+- Angebote (z. B. "Boxen", "TRX" …) → Tabelle: sportangebote
+- Kurse pro Angebot (mit Kursnummer, Tag, Zeit, Ort, …) → Tabelle: sportkurse
+- Termine pro Kurs (einzelne Tage/Zeiten) → Tabelle: course_dates (NEU, mit location_name)
+
+Warum so? Webseiten sind für Menschen gemacht. Wir "lesen" HTML, extrahieren Infos
+und speichern sie strukturiert in der Datenbank, damit Apps oder Analysen damit arbeiten können.
+
+Wie ist der Ablauf?
+1) extract_offers: Hauptseite des Sportprogramms lesen → Liste der Angebote (Name + Link)
+2) extract_courses_for_offer: Für jedes Angebot die Kurs-Tabelle der Detailseite lesen
+3) extract_course_dates: Für jeden Kurs die Unterseite mit allen Terminen öffnen
+4) main: Alles zusammenbauen und in Supabase upserten (Upsert = Insert oder Update)
+
+Wichtige Tabellen/Felder in Supabase:
+- sportangebote: { name, href }
+- sportkurse:    { kursnr, offer_name, ort, zeitraum_href, … }
+- course_dates:  { kursnr, datum, zeit, ort, ort_href, location_name }
+  • location_name verbindet die Termine mit der Standort-Tabelle `unisport_locations.name`
+
+Voraussetzungen (ENV-Variablen):
+- SUPABASE_URL: URL deines Supabase-Projekts
+- SUPABASE_KEY: API-Key (am besten Service-Role)
+
+Hinweise für Anfänger:
+- HTML-Selektoren wie "table.bs_kurse" sind wie "Wegweiser" zu den richtigen Stellen im HTML.
+- Wir verwenden Listen/Dictionaries, weil sie sich einfach zu JSON und DB-Zeilen abbilde
+  n lassen.
+"""
+
+# Imports (Einsteiger-Erklärung, wofür wir sie in DIESEM Skript brauchen)
+# Stell dir die Imports wie Bausteine in Scratch vor – jeder macht eine bestimmte Sache gut.
+# - os: Um Umgebungsvariablen (SUPABASE_URL/KEY) aus dem System/.env zu lesen (unsere "Einstellungen")
+import os
+# - subprocess: Notfall-Lösung, um bei HTTPS-Problemen stattdessen "curl" zu verwenden
+import subprocess
+# - typing: Für Typ-Hinweise (List, Dict), damit der Code verständlicher ist (nur für Menschen/Werkzeuge)
+from typing import List, Dict
+# - datetime: Um Datumstexte (z. B. 03.10.2025) in ein maschinenlesbares ISO-Format umzuwandeln
+from datetime import datetime
+# - urllib.parse.urljoin: Macht aus relativen Links vollständige Internetadressen
+from urllib.parse import urljoin
+# - re: "Suchen mit Muster" in Texten (z. B. Datum/Zeit erkennen)
+import re
+# - requests: Holt Webseiten aus dem Internet
+import requests
+# - bs4.BeautifulSoup: "HTML-Lupe", um Tabellen und Zellen zu finden
+from bs4 import BeautifulSoup
+# - supabase.create_client: Stecker zur Datenbank (lesen/schreiben)
+from supabase import create_client
+# - dotenv.load_dotenv: Liest die .env-Datei (damit Keys nicht im Code stehen)
+from dotenv import load_dotenv
+
+
+def fetch_html(url: str) -> str:
+    """
+    Lädt den HTML-Text einer URL herunter.
+
+    Warum zwei Wege (Requests und curl)?
+    - Manchmal gibt es auf macOS mit älteren Python-/SSL-Versionen Probleme bei HTTPS (TLS-Fehler).
+    - Dann weichen wir auf das Kommandozeilen-Tool "curl" aus, das oft robuster ist.
+    - Für euch heißt das: Wenn der eine Weg nicht klappt, probieren wir automatisch den anderen.
+    """
+    try:
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+        r.raise_for_status()
+        return r.text
+    except Exception:
+        proc = subprocess.run(
+            ["curl", "-fsSL", "-A", "Mozilla/5.0", url],
+            capture_output=True,
+            text=True,
+        )
+        return proc.stdout if proc.returncode == 0 else ""
+
+
+def extract_offers(source: str) -> List[Dict[str, str]]:
+    """
+    Liest die Hauptseite des Sportprogramms und findet die Liste aller Angebote.
+
+    Was suchen wir im HTML?
+    - Die Angebote stehen in einer Liste mit dem CSS-Selektor "dl.bs_menu dd a".
+    - Jedes <a> hat den sichtbaren Namen (z. B. "Boxen") und einen Link (href) zur Detailseite.
+
+    Was machen wir damit?
+    - Wir bauen aus Name und Link ein Dictionary: {"name": ..., "href": ...}.
+    - Wir wandeln relative Links in absolute um (urljoin). So funktionieren sie auch außerhalb der Seite.
+    - Wir entfernen Duplikate, falls ein Link mehrfach auftaucht.
+    """
+    if source.startswith("http://") or source.startswith("https://"):
+        base_url = source
+        html = fetch_html(source)
+    else:
+        base_url = ""
+        with open(source, "r", encoding="utf-8") as f:
+            html = f.read()
+    soup = BeautifulSoup(html, "lxml")
+
+    offers: List[Dict[str, str]] = []
+    seen_hrefs = set()
+    for a in soup.select("dl.bs_menu dd a"):
+        name = a.get_text(strip=True)
+        href = a.get("href")
+        if not name or not href:
+            continue
+        full_href = urljoin(base_url or "", href)
+        if full_href in seen_hrefs:
+            continue
+        seen_hrefs.add(full_href)
+        offers.append({"name": name, "href": full_href})
+    return offers
+
+
+def extract_courses_for_offer(offer: Dict[str, str]) -> List[Dict[str, str]]:
+    """
+    Liest die Detailseite eines Angebots und holt die Kursliste (eine Tabelle).
+
+    Was steht da drin?
+    - Jede Tabellenzeile ist ein Kurs mit vielen Spalten (Kursnr, Tag, Zeit, Ort …)
+    - Wir holen die Texte mit Selektoren wie "td.bs_sknr" (Kursnummer) oder "td.bs_szeit" (Zeit).
+    - In manchen Zellen gibt es Links, die wir zusätzlich als href speichern (z. B. Ort-Link, Buchungs-Link).
+    - Besonders wichtig: In der Spalte "Zeitraum" gibt es einen Link zu einer Unterseite mit allen Terminen.
+      Diesen Link speichern wir als "zeitraum_href", um später die exakten Termine zu laden.
+    """
+    href = offer["href"]
+    name = offer["name"]
+    if not (href.startswith("http://") or href.startswith("https://")):
+        return []
+    html = fetch_html(href)
+    soup = BeautifulSoup(html, "lxml")
+    table = soup.select_one("table.bs_kurse")
+    if not table:
+        return []
+    tbody = table.find("tbody") or table
+    rows: List[Dict[str, str]] = []
+    for tr in tbody.select("tr"):
+        def text(sel: str) -> str:
+            el = tr.select_one(sel)
+            return el.get_text(" ", strip=True) if el else ""
+        kursnr = text("td.bs_sknr")
+        if not kursnr:
+            continue
+        details = text("td.bs_sdet")
+        tag = text("td.bs_stag")
+        zeit = text("td.bs_szeit")
+        ort_cell = tr.select_one("td.bs_sort")
+        # Ort-Texte werden nicht mehr in sportkurse gespeichert. Wir benötigen hier primär
+        # location_name für kurs_termine (kommt in extract_course_dates) und belassen sportkurse schlank.
+        ort = ort_cell.get_text(" ", strip=True) if ort_cell else ""
+        ort_link = ort_cell.select_one("a") if ort_cell else None
+        ort_href = urljoin(href, ort_link.get("href")) if (ort_link and ort_link.get("href")) else None
+        zr_cell = tr.select_one("td.bs_szr")
+        zr_link = zr_cell.select_one("a") if zr_cell else None
+        zeitraum_href = urljoin(href, zr_link.get("href")) if (zr_link and zr_link.get("href")) else None
+        leitung = text("td.bs_skl")
+        preis = text("td.bs_spreis")
+        buch_cell = tr.select_one("td.bs_sbuch")
+        buchung = buch_cell.get_text(" ", strip=True) if buch_cell else ""
+        buch_link = buch_cell.select_one("a") if buch_cell else None
+        buchung_href = urljoin(href, buch_link.get("href")) if (buch_link and buch_link.get("href")) else None
+        rows.append({
+            "offer_name": name,
+            "offer_href": href,
+            "kursnr": kursnr,
+            "details": details,
+            "tag": tag,
+            "zeit": zeit,
+            # Felder ort/ort_href werden nicht mehr in sportkurse persistiert.
+            "zeitraum_href": zeitraum_href,
+            "leitung": leitung,
+            "preis": preis,
+            "buchung": buchung,
+            "buchung_href": buchung_href,
+        })
+    return rows
+
+
+def extract_course_dates(kursnr: str, zeitraum_href: str) -> List[Dict[str, str]]:
+    """
+    Öffnet die Unterseite mit den geplanten Terminen eines einzelnen Kurses
+    und sammelt jede Zeile (Tag + Datum + Zeit + Ort) als Datensatz.
+
+    Wichtige Idee hier:
+    - Die Seite zeigt oft eine Tabelle mit mehreren Zeilen, jede Zeile ein Termin.
+    - Das Datum steht im Format TT.MM.JJJJ. Wir wandeln es in ISO-Format (JJJJ-MM-TT) um,
+      damit die Datenbank damit gut arbeiten kann und es weltweit eindeutig ist.
+    """
+    html = fetch_html(zeitraum_href)
+    soup = BeautifulSoup(html, "lxml")
+    table = soup.select_one("table.bs_kurse")
+    if not table:
+        return []
+    out: List[Dict[str, str]] = []
+    for tr in table.select("tr"):
+        tds = tr.find_all("td")
+        if len(tds) < 4:
+            continue
+        wochentag = tds[0].get_text(" ", strip=True)
+        datum_raw = tds[1].get_text(" ", strip=True)
+        zeit_txt = tds[2].get_text(" ", strip=True)
+        ort_cell = tds[3]
+        ort_txt = ort_cell.get_text(" ", strip=True)
+        a = ort_cell.find("a")
+        ort_href = urljoin(zeitraum_href, a.get("href")) if (a and a.get("href")) else None
+        try:
+            datum_iso = datetime.strptime(datum_raw, "%d.%m.%Y").date().isoformat()
+        except Exception:
+            continue
+        location_name = ort_txt.strip() or None
+        out.append({
+            "kursnr": kursnr,
+            "datum": datum_iso,
+            "wochentag": wochentag,
+            "zeit": zeit_txt,
+            "ort_href": ort_href,
+            "location_name": location_name,
+        })
+    return out
+
+
+def main() -> None:
+    # 1) Umgebungsvariablen aus einer .env-Datei laden (falls vorhanden)
+    #    Warum? So müssen sensible Daten (z. B. Datenbank-Schlüssel) nicht im Code stehen.
+    #    Stattdessen schreibt ihr sie in eine Datei ".env" im Projektordner, z. B.:
+    #      SUPABASE_URL=https://…
+    #      SUPABASE_KEY=…
+    load_dotenv()
+    # 2) Wir verwenden immer die Live-URL der Hauptseite (kein lokaler Pfad nötig)
+    html_source = "https://www.sportprogramm.unisg.ch/unisg/angebote/aktueller_zeitraum/index.html"
+    #    Wir holen die Angebote (Name + Link) und speichern sie in einer Liste von Dictionaries.
+    offers = extract_offers(html_source)
+
+    # 3) Mit Supabase verbinden (wir brauchen URL und API-Key aus der .env-Datei)
+    supabase_url = os.environ.get("SUPABASE_URL")
+    supabase_key = os.environ.get("SUPABASE_KEY")
+    if not supabase_url or not supabase_key:
+        print("Bitte SUPABASE_URL und SUPABASE_KEY als ENV setzen.")
+        return
+    supabase = create_client(supabase_url, supabase_key)
+
+    # 4) Zuerst schreiben wir die Angebote in die Tabelle "sportangebote".
+    #    Upsert bedeutet: Wenn ein Eintrag schon existiert (gleicher Schlüssel), wird er aktualisiert.
+    #    Schlüssel hier ist die Spalte "href" (der Link zur Angebotsseite).
+    try:
+        supabase.table("sportangebote").upsert(offers, on_conflict="href").execute()
+        print(f"Supabase: {len(offers)} Angebote upserted (idempotent).")
+    except Exception as e:
+        print(f"Warnung: Upsert sportangebote fehlgeschlagen: {e}")
+
+    # 5) Als nächstes sammeln wir alle Kurse aller Angebote.
+    #    Dafür besuchen wir für jedes Angebot die Detailseite und lesen die Kurstabelle.
+    all_courses: List[Dict[str, str]] = []
+    for off in offers:
+        all_courses.extend(extract_courses_for_offer(off))
+    #    Dann schreiben wir alle Kurse in die Tabelle "sportkurse".
+    #    Schlüssel ist die Kursnummer ("kursnr").
+    try:
+        supabase.table("sportkurse").upsert(all_courses, on_conflict="kursnr").execute()
+        print(f"Supabase: {len(all_courses)} Kurse upserted (idempotent).")
+    except Exception as e:
+        print(f"Warnung: Upsert sportkurse fehlgeschlagen: {e}")
+
+    # 6) Jetzt kommen die exakten Termine pro Kurs.
+    #    Für jeden Kurs gibt es einen Link (zeitraum_href) zu einer Unterseite mit allen geplanten Terminen.
+    all_dates: List[Dict[str, str]] = []
+    for c in all_courses:
+        if c.get("zeitraum_href") and c.get("kursnr"):
+            all_dates.extend(extract_course_dates(c["kursnr"], c["zeitraum_href"]))
+    #    Diese Termine schreiben wir zurück in "kurs_termine" (Legacy-Tabelle), jetzt mit location_name-Verknüpfung.
+    if all_dates:
+        # Vor Upsert: ungültige location_name bereinigen (NULL setzen, falls nicht in unisport_locations)
+        try:
+            loc_resp = supabase.table("unisport_locations").select("name").execute()
+            valid_names = { (r.get("name") or "").strip() for r in (loc_resp.data or []) if r.get("name") }
+        except Exception:
+            valid_names = set()
+        for row in all_dates:
+            ln = (row.get("location_name") or "").strip()
+            if not ln or (valid_names and ln not in valid_names):
+                row["location_name"] = None
+        try:
+            supabase.table("kurs_termine").upsert(all_dates, on_conflict="kursnr,datum").execute()
+            print(f"Supabase: {len(all_dates)} Termine upserted (kurs_termine, idempotent).")
+        except Exception as e:
+            print(f"Warnung: Upsert kurs_termine fehlgeschlagen: {e}")
+    else:
+        print("Hinweis: Keine Termine gefunden.")
+
+    # Hinweis: Die Logik zum Erkennen und Markieren von Trainingsausfällen
+    #          wurde nach update_cancellations.py ausgelagert, damit beide
+    #          Skripte unabhängig voneinander lauffähig sind.
+
+
+if __name__ == "__main__":
+    main()

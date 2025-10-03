@@ -1,0 +1,14 @@
+beautifulsoup4>=4.12.2
+lxml>=4.9.3
+requests>=2.31.0
+supabase>=2.6.0
+python-dotenv>=1.0.1
+
+# Erklärung (für Anfänger):
+# - beautifulsoup4/lxml: Lesen/Verstehen von HTML (die Webseiten-Struktur)
+# - requests: Holt Webseiten (HTTP)
+# - supabase: Verbindung zur Datenbank (lesen/schreiben)
+# - python-dotenv: Liest .env-Dateien, damit Keys nicht im Code stehen
+streamlit>=1.32.0
+st-supabase-connection>=1.0.0
+gotrue>=2.0.0
