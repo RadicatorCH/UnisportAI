@@ -1,8 +1,12 @@
 import streamlit as st
 from typing import Any, Dict, List, Optional
 
-# Wir nutzen die offizielle Streamlit-Connection für Supabase.
-# Stelle sicher, dass "st-supabase-connection" in requirements.txt installiert ist.
+# Diese App zeigt die in Supabase gespeicherten Daten (Angebote, Kurse, Termine) an.
+# Wichtige Idee: Wir verbinden Streamlit mit Supabase über die offizielle Connection
+# ("st-supabase-connection"). Die Zugangsdaten kommen aus `.streamlit/secrets.toml`.
+#
+# Tipp: In `requirements.txt` muss `st-supabase-connection` stehen, sonst kennt
+# Streamlit diesen Connection-Typ nicht.
 
 
 def get_supabase_conn() -> Any:
@@ -14,34 +18,53 @@ def get_supabase_conn() -> Any:
     - Alternativ: SUPABASE_URL, SUPABASE_KEY
     Die Connection liest automatisch aus secrets; wir übergeben ggf. Fallbacks.
     """
+    # Schritt 1: Secrets lesen. Wir erwarten in `.streamlit/secrets.toml` einen Block
+    # [connections.supabase] mit `url` und `key` (oder alternativ SUPABASE_URL/KEY).
     secrets = st.secrets.get("connections", {}).get("supabase", {})
-    # Mapping unterstützen, falls SUPABASE_URL/KEY genutzt werden
+    # Unterstütze beide Schreibweisen, damit Einsteiger weniger Fehlerquellen haben.
     url = secrets.get("url") or secrets.get("SUPABASE_URL")
     key = secrets.get("key") or secrets.get("SUPABASE_KEY")
 
     # Wenn url/key fehlen, trotzdem versuchen, da die Connection sie ggf. selbst liest
+    # Schritt 2: Connection herstellen.
+    # - Wenn wir url/key haben, geben wir sie explizit mit.
+    # - Sonst überlässt Streamlit das Laden den Secrets (falls korrekt hinterlegt).
     if url and key:
-        return st.connection("supabase", type="st_supabase_connection.SupabaseConnection", url=url, key=key)
+        return st.connection(
+            "supabase",
+            type="st_supabase_connection.SupabaseConnection",
+            url=url,
+            key=key,
+        )
     return st.connection("supabase", type="st_supabase_connection.SupabaseConnection")
 
 
 def safe_query(conn: Any, table: str, select: str = "*") -> List[Dict[str, Any]]:
+    # Diese Funktion kapselt das Lesen aus einer Tabelle.
+    # Warum? So bricht die App nicht komplett ab, wenn etwas schiefgeht –
+    # stattdessen zeigen wir eine Warnung und eine leere Liste.
     try:
+        # Die Streamlit-Connection stellt einen Supabase-Client unter `conn.client` bereit.
         client = getattr(conn, "client", None)
         if client is None:
             raise RuntimeError("Supabase-Client nicht verfügbar (conn.client ist None)")
+        # Standardabfrage: SELECT <spalten> FROM <table>
         resp = client.table(table).select(select).execute()
         return resp.data or []
     except Exception as e:
+        # Für Einsteiger: Fehler sichtbar machen, aber die App läuft weiter.
         st.warning(f"Fehler beim Laden aus {table}: {e}")
         return []
 
 
 def main() -> None:
+    # Seiten-Layout und Titel für die App festlegen.
+    # layout="wide" gibt mehr Platz für Tabellen.
     st.set_page_config(page_title="UnisportAI", layout="wide")
     st.title("UnisportAI – Datenansicht")
     st.caption("Streamlit + Supabase via st.connection")
 
+    # Linke Seitenleiste: Team anzeigen (reine Deko / Credits)
     with st.sidebar:
         st.header("Projektteam")
         team = [
@@ -79,27 +102,35 @@ def main() -> None:
             with col2:
                 st.markdown(f"[{name}]({url})", unsafe_allow_html=True)
 
+    # Supabase-Verbindung herstellen (aus den Secrets)
     conn = get_supabase_conn()
 
+    # UI: Drei Tabs – je eine Tabelle. So bleibt es übersichtlich.
     st.subheader("Tabellen")
-    tabs = st.tabs(["sportangebote", "sportkurse", "kurs_termine"])  # legacy: kurs_termine
+    tabs = st.tabs(["sportangebote", "sportkurse", "kurs_termine", "unisport_locations"])  # legacy: kurs_termine
 
     with tabs[0]:
+        # Tab 1: Sportangebote – zeige alle Spalten (1:1 zur DB)
         st.write("Alle Sportangebote")
-        data = safe_query(conn, "sportangebote", "name, href")
+        data = safe_query(conn, "sportangebote", "*")
+        # Einfacher Textfilter: zeigt nur Zeilen, deren Name den Suchbegriff enthält
         search = st.text_input("Filter nach Name…", key="f1")
         if search:
             data = [r for r in data if search.lower() in (r.get("name") or "").lower()]
+        # Tabelle in voller Breite anzeigen
         st.dataframe(data, use_container_width=True)
 
     with tabs[1]:
+        # Tab 2: Kurse – alle Spalten anzeigen
         st.write("Alle Kurse")
-        data = safe_query(conn, "sportkurse", "kursnr, offer_name, tag, zeit, zeitraum_href, buchung, buchung_href")
+        data = safe_query(conn, "sportkurse", "*")
+        # Zwei nebeneinander liegende Filter-Eingabefelder
         col1, col2 = st.columns(2)
         with col1:
             f_offer = st.text_input("Filter Angebot…", key="f2")
         with col2:
             f_kurs = st.text_input("Filter Kursnr…", key="f3")
+        # Optional filtern (Case-insensitive)
         if f_offer:
             data = [r for r in data if f_offer.lower() in (r.get("offer_name") or "").lower()]
         if f_kurs:
@@ -107,21 +138,33 @@ def main() -> None:
         st.dataframe(data, use_container_width=True)
 
     with tabs[2]:
+        # Tab 3: Einzeltermine – alle Spalten anzeigen
         st.write("Kurs-Termine (legacy: kurs_termine)")
-        data = safe_query(conn, "kurs_termine", "kursnr, datum, wochentag, zeit, location_name, canceled")
+        data = safe_query(conn, "kurs_termine", "*")
         col1, col2, col3 = st.columns(3)
         with col1:
             f_kurs = st.text_input("Filter Kursnr…", key="f4")
         with col2:
             f_date = st.text_input("Filter Datum (YYYY-MM-DD)…", key="f5")
         with col3:
+            # Dieses Häkchen zeigt nur Termine mit canceled=true (also abgesagt)
             canceled_only = st.checkbox("Nur canceled=true", value=False)
+        # Optional filtern nach Kursnummer, Datum-Präfix und Absage-Status
         if f_kurs:
             data = [r for r in data if f_kurs.lower() in (r.get("kursnr") or "").lower()]
         if f_date:
             data = [r for r in data if (r.get("datum") or "").startswith(f_date)]
         if canceled_only:
             data = [r for r in data if bool(r.get("canceled"))]
+        st.dataframe(data, use_container_width=True)
+
+    with tabs[3]:
+        # Tab 4: Standorte – alle Spalten anzeigen
+        st.write("Standorte")
+        data = safe_query(conn, "unisport_locations", "*")
+        f_name = st.text_input("Filter Standortname…", key="f6")
+        if f_name:
+            data = [r for r in data if f_name.lower() in (r.get("name") or "").lower()]
         st.dataframe(data, use_container_width=True)
 
 
