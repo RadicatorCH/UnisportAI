@@ -43,16 +43,41 @@ def main() -> None:
     st.caption("Streamlit + Supabase via st.connection")
 
     with st.sidebar:
-        st.header("Verbindung")
-        st.write("Credentials werden aus `.streamlit/secrets.toml` geladen.")
-        st.code("""
-[connections.supabase]
-url = "https://PROJECT_REF.supabase.co"
-key = "<ANON ODER SERVICE KEY>"
-# Alternativ:
-SUPABASE_URL = "https://PROJECT_REF.supabase.co"
-SUPABASE_KEY = "<ANON ODER SERVICE KEY>"
-""".strip())
+        st.header("Projektteam")
+        team = [
+            (
+                "Tamara Nessler",
+                "https://www.linkedin.com/in/tamaranessler/",
+                "https://media.licdn.com/dms/image/v2/D4D03AQHoFx3FqbKv8Q/profile-displayphoto-shrink_800_800/profile-displayphoto-shrink_800_800/0/1729070262001?e=1762387200&v=beta&t=qxTtWz-rqXh2ooOxkLCaODftWKDB-mCnB1Kf6nu4JPU",
+            ),
+            (
+                "Till Banerjee",
+                "https://www.linkedin.com/in/till-banerjee/",
+                "https://media.licdn.com/dms/image/v2/D4E03AQFL1-Ud8CLN3g/profile-displayphoto-shrink_800_800/profile-displayphoto-shrink_800_800/0/1708701675021?e=1762387200&v=beta&t=msstC8263pJyCfjiZwNzfYF3l57yHvSpIuMO77A-U0A",
+            ),
+            (
+                "Sarah Bugg",
+                "https://www.linkedin.com/in/sarah-bugg/",
+                "https://media.licdn.com/dms/image/v2/D4E03AQEanhywBsKAPA/profile-displayphoto-scale_400_400/B4EZkoux6gKkAg-/0/1757324976456?e=1762387200&v=beta&t=Gicl6-C96pUuB2MUNVwbKzctjVaqaQDn39blJxdkjAo",
+            ),
+            (
+                "Antonia Büttiker",
+                "https://www.linkedin.com/in/antonia-büttiker-895713254/",
+                "https://media.licdn.com/dms/image/v2/D4E03AQHZuEjmbys12Q/profile-displayphoto-shrink_400_400/B4EZVwmujrG0Ak-/0/1741350956527?e=1762387200&v=beta&t=s3ypqYDZ6Od8XU9ktFTwRNnwSHckHmFejMpnn8GdhWg",
+            ),
+            (
+                "Luca Hagenmayer",
+                "https://www.linkedin.com/in/lucahagenmayer/",
+                "https://media.licdn.com/dms/image/v2/D4E03AQFGdchJCbDXFQ/profile-displayphoto-shrink_400_400/profile-displayphoto-shrink_400_400/0/1730973343664?e=1762387200&v=beta&t=1awZw8RSI5xBKF9gFxOlFYsNDxGalTcgK3z-Ma8R0qU",
+            ),
+        ]
+
+        for name, url, avatar in team:
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                st.image(avatar, width=40)
+            with col2:
+                st.markdown(f"[{name}]({url})", unsafe_allow_html=True)
 
     conn = get_supabase_conn()
 
