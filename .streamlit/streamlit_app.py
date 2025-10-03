@@ -87,14 +87,31 @@ def main() -> None:
         unsafe_allow_html=True,
     )
     st.caption("Streamlit + Supabase via st.connection")
-    # Hinweis zum Datenstand und zur Quelle (rechtlich unverbindlich, experimentell)
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    # Hinweis zum Datenstand: letzter erfolgreicher Webscrape aus etl_runs + Quelle
+    try:
+        conn2 = get_supabase_conn()
+        client2 = getattr(conn2, "client", None)
+        last_run = None
+        if client2 is not None:
+            resp = (
+                client2
+                .table("etl_runs")
+                .select("ran_at")
+                .order("ran_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if resp.data:
+                last_run = resp.data[0].get("ran_at")
+        dt_label = str(last_run) if last_run else "unbekannt"
+    except Exception:
+        dt_label = "unbekannt"
     st.info(
         """
-        **Datenstand:** {now} (Abrufzeitpunkt dieser Ansicht).
-        Kursdaten basieren auf der offiziellen Quelle: [Unisport HSG](https://www.sportprogramm.unisg.ch/unisg/angebote/aktueller_zeitraum/index.html).
-        Angaben ohne Gewähr; diese Anwendung ist experimentell und nicht rechtsverbindlich.
-        """.format(now=now_str)
+        **Datenstand:** {ts} (letzter erfolgreicher Web‑Scrape).
+        Quelle der Kurs‑ und Angebotsdaten: [Unisport HSG](https://www.sportprogramm.unisg.ch/unisg/angebote/aktueller_zeitraum/index.html).
+        Hinweis: Diese Ansicht ist experimentell und ohne Gewähr.
+        """.format(ts=dt_label)
     )
     # Kurzer Überblick für Nicht‑Techniker: Was passiert hier?
     st.markdown(

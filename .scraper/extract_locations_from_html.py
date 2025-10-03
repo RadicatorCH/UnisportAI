@@ -82,7 +82,7 @@ def parse_markers(html: str) -> List[Dict[str, object]]:
     Extracts marker entries from a JS array literal like:
     var markers=[[47.42901,9.38402,"Athletik Zentrum, Gymnastikraum"], ...];
     Returns list of dicts: {"name": str, "lat": float, "lng": float}
-    Anfänger-Idee: Wir suchen in dem HTML-Text nach einer Stelle, wo Koordinaten und Namen
+    Wir suchen in dem HTML-Text nach einer Stelle, wo Koordinaten und Namen
     in einer Liste stehen. Dann schneiden wir uns jeden Eintrag heraus.
     """
     m = re.search(r"var\s+markers\s*=\s*\[(.*?)\];", html, re.S)
@@ -130,7 +130,7 @@ def parse_location_sports(html: str) -> Dict[str, List[str]]:
     """
     Extract mapping from location name to list of sports using the 'bs_flmenu' menu.
     Returns dict: name -> [sports]
-    Anfänger-Idee: Auf der Seite gibt es auch ein Menü, wo unter jedem Ort die Sportarten
+    Auf der Seite gibt es auch ein Menü, wo unter jedem Ort die Sportarten
     aufgelistet sind. Wir laufen durch diese Liste und bauen ein Wörterbuch: Ort → [Sportarten].
     """
     mapping: Dict[str, List[str]] = {}
@@ -156,7 +156,7 @@ def parse_location_links(html: str, base_url: Optional[str] = None) -> Dict[str,
     """
     Liest aus dem Menü (div.bs_flmenu) die Standortlinks (href) und extrahiert spid.
     Gibt zurück: name -> {"href": absolute URL|None, "spid": str|None}
-    Anfänger-Idee: Jeder Ort hat auch einen Link zu einer Detailseite. Aus dem Link holen wir
+    Idee: Jeder Ort hat auch einen Link zu einer Detailseite. Aus dem Link holen wir
     die vollständige Adresse (href) und eine interne Kennung (spid) heraus.
     """
     out: Dict[str, Dict[str, Optional[str]]] = {}
@@ -249,6 +249,12 @@ def main() -> None:
             print(f"Warnung: Upsert unisport_locations fehlgeschlagen (Batch {i}-{i+batch_size}): {e}")
     print(f"Supabase: {total} Locations upserted (idempotent).")
     # Fertig: Alle Orte liegen jetzt in der Tabelle unisport_locations.
+
+    # ETL-Run protokollieren
+    try:
+        client.table("etl_runs").insert({"component": "extract_locations"}).execute()
+    except Exception:
+        pass
 
     # Hinweis: Die relationale Verknüpfung zu Angeboten wird nicht mehr in einer Zwischentabelle gepflegt.
     # Abfragen können über Namen verknüpft werden (sportkurse.offer_name ↔ unisport_locations.name via kurs_termine.location_name).

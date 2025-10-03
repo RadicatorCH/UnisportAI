@@ -1,6 +1,6 @@
 """
 Dieses Python-Skript sammelt das Sportprogramm (Angebote, Kurse, Termine) und speichert
-es in Supabase. Es ist absichtlich für absolute Anfänger erklärt.
+es in Supabase.
 
 Was wird gespeichert? Drei Ebenen:
 - Angebote (z. B. "Boxen", "TRX" …) → Tabelle: sportangebote
@@ -26,7 +26,7 @@ Voraussetzungen (ENV-Variablen):
 - SUPABASE_URL: URL deines Supabase-Projekts
 - SUPABASE_KEY: API-Key (am besten Service-Role)
 
-Hinweise für Anfänger:
+Hinweise:
 - HTML-Selektoren wie "table.bs_kurse" sind wie "Wegweiser" zu den richtigen Stellen im HTML.
 - Wir verwenden Listen/Dictionaries, weil sie sich einfach zu JSON und DB-Zeilen abbilde
   n lassen.
@@ -271,6 +271,12 @@ def main() -> None:
         print(f"Supabase: {len(all_dates)} Termine upserted (kurs_termine, idempotent).")
     else:
         print("Hinweis: Keine Termine gefunden.")
+
+    # ETL-Run protokollieren
+    try:
+        supabase.table("etl_runs").insert({"component": "scrape_sportangebote"}).execute()
+    except Exception:
+        pass
 
     # Hinweis: Die Logik zum Erkennen und Markieren von Trainingsausfällen
     #          wurde nach update_cancellations.py ausgelagert, damit beide

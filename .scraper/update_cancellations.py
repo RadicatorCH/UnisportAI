@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 """
 Dieses Skript liest Trainingsausfälle (Absagen) und markiert passende Termine in Supabase.
-Erklärung für Anfänger (nur Scratch-Erfahrung nötig):
+Erklärung:
 
 Was passiert hier – in einfachen Schritten:
 1) Wir lesen eine HSG-Webseite ein, auf der Absagen als Text stehen (Datum, Kursname, Startzeit).
@@ -135,6 +135,12 @@ def main() -> None:
         print(f"Supabase: {len(uniq)} Ausfälle als canceled=true markiert (idempotent).")
     else:
         print("Keine passenden Termine zum Markieren gefunden.")
+
+    # ETL-Run protokollieren
+    try:
+        supabase.table("etl_runs").insert({"component": "update_cancellations"}).execute()
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
