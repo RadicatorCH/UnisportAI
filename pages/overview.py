@@ -169,24 +169,19 @@ for offer in filtered_offers:
             st.caption(' • '.join(info_parts))
     
     with col2:
-        col2a, col2b = st.columns([1, 1])
-        with col2a:
-            if st.button("View", key=f"view_{offer['href']}", use_container_width=True):
-                st.session_state['state_selected_offer'] = offer
-                st.switch_page("pages/details.py")
+        if st.button("View", key=f"view_{offer['href']}", use_container_width=True):
+            st.session_state['state_selected_offer'] = offer
+            st.switch_page("pages/details.py")
+    
+    # Rating widget in expander at the bottom
+    if is_logged_in():
+        from data.rating import render_sportangebot_rating_widget, get_average_rating_for_offer
+        rating_info = get_average_rating_for_offer(offer['href'])
         
-        # Rating button nur wenn eingeloggt
-        if st.user.is_logged_in:
-            with col2b:
-                rating_info = get_average_rating_for_offer(offer['href'])
-                if rating_info['count'] > 0:
-                    st.button(f"⭐ {rating_info['avg']}", 
-                              key=f"rating_{offer['href']}", 
-                              use_container_width=True,
-                              help=f"{rating_info['count']} Bewertungen")
+        if rating_info['count'] > 0:
+            st.caption(f"⭐ Bewertung: {rating_info['avg']}/5 ({rating_info['count']} Bewertungen)")
         
-        # Rating-Widget
-        if st.user.is_logged_in:
+        with st.expander("⭐ Diesen Sport bewerten", expanded=False):
             render_sportangebot_rating_widget(offer['href'])
     
     # Add expander with upcoming dates for each activity
