@@ -2,8 +2,13 @@ import streamlit as st
 from st_supabase_connection import SupabaseConnection
 
 def supaconn():
-    conn = st.connection("supabase",type=SupabaseConnection)
-    return conn
+    try:
+        conn = st.connection("supabase", type=SupabaseConnection)
+        return conn
+    except Exception as e:
+        st.error(f"Fehler bei der Supabase-Verbindung: {str(e)}")
+        st.info("Bitte stellen Sie sicher, dass die Supabase-Credentials in .streamlit/secrets.toml (lokal) oder in den Streamlit Cloud Secrets konfiguriert sind.")
+        raise
 
 def angebote():
     conn = supaconn()
