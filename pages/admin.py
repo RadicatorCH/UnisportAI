@@ -1,8 +1,9 @@
 import streamlit as st
 from data.user_management import render_admin_panel, is_admin
+from data.auth import is_logged_in
 
 # Prüfe Admin-Berechtigung
-if not st.user.is_logged_in:
+if not is_logged_in():
     st.error("❌ Bitte melden Sie sich an.")
     st.stop()
 

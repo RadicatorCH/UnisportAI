@@ -4,6 +4,12 @@ from data.supabase_client import get_events_for_offer, get_all_events
 from data.state_manager import get_selected_offers_for_page2, get_filter_state, set_filter_state
 from data.shared_sidebar import render_shared_sidebar
 from data.rating import render_sportangebot_rating_widget, render_trainer_rating_widget, get_average_rating_for_offer, get_average_rating_for_trainer
+from data.auth import is_logged_in
+
+# Check authentication
+if not is_logged_in():
+    st.error("❌ Bitte melden Sie sich an.")
+    st.stop()
 
 # Check if we should pre-select an offer based on filter from page_3
 if 'state_nav_offer_hrefs' in st.session_state:

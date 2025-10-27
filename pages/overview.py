@@ -5,6 +5,12 @@ from data.filters import filter_offers, filter_offers_by_events, filter_events
 from data.state_manager import get_filter_state, set_filter_state
 from data.shared_sidebar import render_shared_sidebar
 from data.rating import render_sportangebot_rating_widget, get_average_rating_for_offer
+from data.auth import is_logged_in
+
+# Check authentication
+if not is_logged_in():
+    st.error("❌ Bitte melden Sie sich an.")
+    st.stop()
 
 st.title('🎯 Sports Overview')
 st.markdown('### Browse all available activities')
