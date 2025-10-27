@@ -1,14 +1,14 @@
 import streamlit as st
 from datetime import datetime, timedelta
+from data.supabase_client import get_all_events
+from data.state_manager import store_page_3_to_page_2_filters, get_filter_state, set_filter_state
+from data.shared_sidebar import render_shared_sidebar
 from data.auth import is_logged_in
 
 # Check authentication
 if not is_logged_in():
     st.error("❌ Bitte melden Sie sich an.")
     st.stop()
-from data.supabase_client import get_all_events
-from data.state_manager import store_page_3_to_page_2_filters, get_filter_state, set_filter_state
-from data.shared_sidebar import render_shared_sidebar
 
 st.title("📅 Calendar View")
 st.markdown("### Weekly overview of all course dates")
