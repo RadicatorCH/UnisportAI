@@ -183,6 +183,35 @@ def render_user_profile_page():
                 st.image(profile['picture'], width=150)
             st.markdown(f"**Registriert:** {profile.get('created_at', 'N/A')[:10]}")
             st.markdown(f"**Letzter Login:** {profile.get('last_login', 'N/A')[:10] if profile.get('last_login') else 'N/A'}")
+        
+        # Show TOS/Privacy acceptance status
+        st.divider()
+        st.subheader("📋 Legal & Compliance")
+        
+        tos_accepted = profile.get('tos_accepted', False)
+        privacy_accepted = profile.get('privacy_policy_accepted', False)
+        tos_accepted_at = profile.get('tos_accepted_at')
+        privacy_accepted_at = profile.get('privacy_policy_accepted_at')
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if tos_accepted:
+                st.success(f"✅ Terms of Service akzeptiert")
+                if tos_accepted_at:
+                    st.caption(f"Akzeptiert am: {tos_accepted_at[:10]}")
+            else:
+                st.warning("⚠️ Terms of Service nicht akzeptiert")
+        
+        with col2:
+            if privacy_accepted:
+                st.success(f"✅ Privacy Policy akzeptiert")
+                if privacy_accepted_at:
+                    st.caption(f"Akzeptiert am: {privacy_accepted_at[:10]}")
+            else:
+                st.warning("⚠️ Privacy Policy nicht akzeptiert")
+        
+        st.info("💡 Diese Zustimmungen sind erforderlich, um die Anwendung zu nutzen.")
     
     with tab2:
         st.subheader("Präferenzen")
@@ -366,11 +395,33 @@ def render_admin_panel():
 
 def submit_sportangebot_rating(sportangebot_href: str, rating: int, comment: str = "") -> bool:
     """Speichert eine Bewertung für ein Sportangebot"""
+    # Security validation
+    from data.security import validate_rating, validate_comment, sanitize_html, rate_limit_check
+    from data.auth import get_user_sub
+    
     user_sub = get_user_sub()
     if not user_sub:
         return False
     
     try:
+        # Rate limiting
+        if not rate_limit_check("rating", user_sub, max_actions=20, time_window=300):
+            st.error("Zu viele Bewertungen in kurzer Zeit. Bitte warten Sie einen Moment.")
+            return False
+        
+        # Validate rating
+        if not validate_rating(rating):
+            st.error("Ungültige Bewertung")
+            return False
+        
+        # Validate and sanitize comment
+        if comment:
+            is_valid, error_msg = validate_comment(comment)
+            if not is_valid:
+                st.error(error_msg)
+                return False
+            comment = sanitize_html(comment)
+        
         import json
         client = get_supabase_client()
         
@@ -412,11 +463,33 @@ def submit_sportangebot_rating(sportangebot_href: str, rating: int, comment: str
 
 def submit_trainer_rating(trainer_name: str, rating: int, comment: str = "") -> bool:
     """Speichert eine Bewertung für einen Trainer"""
+    # Security validation
+    from data.security import validate_rating, validate_comment, sanitize_html, rate_limit_check
+    from data.auth import get_user_sub
+    
     user_sub = get_user_sub()
     if not user_sub:
         return False
     
     try:
+        # Rate limiting
+        if not rate_limit_check("trainer_rating", user_sub, max_actions=20, time_window=300):
+            st.error("Zu viele Bewertungen in kurzer Zeit. Bitte warten Sie einen Moment.")
+            return False
+        
+        # Validate rating
+        if not validate_rating(rating):
+            st.error("Ungültige Bewertung")
+            return False
+        
+        # Validate and sanitize comment
+        if comment:
+            is_valid, error_msg = validate_comment(comment)
+            if not is_valid:
+                st.error(error_msg)
+                return False
+            comment = sanitize_html(comment)
+        
         client = get_supabase_client()
         
         # Get user_id
