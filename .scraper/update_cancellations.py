@@ -1,0 +1,184 @@
+import os
+import re
+import subprocess
+from typing import List, Dict
+from datetime import datetime
+from urllib.parse import urljoin
+import requests
+from bs4 import BeautifulSoup
+from supabase import create_client
+from dotenv import load_dotenv
+
+"""
+Dieses Skript liest Trainingsausfälle (Absagen) und markiert passende Termine in Supabase.
+Erklärung:
+
+Was passiert hier – in einfachen Schritten:
+1) Wir lesen eine HSG-Webseite ein, auf der Absagen als Text stehen (Datum, Kursname, Startzeit).
+2) Wir übersetzen Datum in ein technisches Format (JJJJ-MM-TT) und die Startzeit in eine Zahl (HHMM).
+3) Wir fragen in unserer Datenbank die Kurse ab (Kursnummern je Kursname).
+4) Für diese Kursnummern suchen wir an dem Datum die Termine und vergleichen die Startzeit.
+5) Treffer werden als canceled=true gespeichert (Upsert: einfügen oder aktualisieren).
+
+WICHTIG: Das canceled Flag wird NUR GESETZT (true), nie zurückgesetzt (false).
+Kurse werden NICHT gelöscht, nur als canceled=true markiert.
+
+Wofür sind die Imports?
+- os/dotenv: holen die Zugangsdaten (URL, KEY) aus deiner Umgebung/.env
+- requests: laden die Webseite
+- BeautifulSoup: hilft, aus dem Webseiten-Text reinen Text zu machen
+- re: findet Datum/Zeit mit Mustern im Text
+- supabase.create_client: Verbindung zur Datenbank
+"""
+
+# Mini-Tutorial:
+# - Schritt 1: Absagen-Webseite laden und Text herausziehen (parse_cancellations)
+# - Schritt 2: Datum in JJJJ-MM-TT umwandeln, Startzeit als HHMM-Zahl berechnen
+# - Schritt 3: Kurse aus DB laden und Name→Kursnummern-Mapping bauen
+# - Schritt 4: Termine am passenden Datum holen und Zeiten vergleichen
+# - Schritt 5: Treffer als canceled=true upserten (keine Duplikate)
+
+
+def fetch_html(url: str) -> str:
+    # Browser-ähnlicher Header, damit die Seite uns wie einen normalen Besucher behandelt
+    r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+    r.raise_for_status()
+    return r.text
+
+
+def parse_cancellations() -> List[Dict[str, str]]:
+    url_cancel = "https://www.unisg.ch/de/universitaet/ueber-uns/beratungs-und-fachstellen/unisport/"
+    html = fetch_html(url_cancel)
+    if not html:
+        return []
+    # Schritt 1: Gesamten Text der Seite holen (ohne HTML-Tags)
+    text = BeautifulSoup(html, "lxml").get_text(" ", strip=True)
+    pattern = re.compile(r"(\d{2}\.\d{2}\.\d{4})\s*,\s*([^,]+?)\s*,\s*(\d{1,2}[:\.]\d{2})")
+    out: List[Dict[str, str]] = []
+    # Schritt 2: Aus jedem Treffer ein kleines Dictionary bauen
+    for m in pattern.finditer(text):
+        date_raw = m.group(1)
+        name = m.group(2).strip()
+        time_raw = m.group(3).strip()
+        try:
+            date_iso = datetime.strptime(date_raw, "%d.%m.%Y").date().isoformat()
+        except Exception:
+            continue
+        time_digits = re.sub(r"[^0-9]", "", time_raw)
+        if len(time_digits) >= 3:
+            start_hhmm = int(time_digits[:2] + time_digits[2:4])
+            out.append({"offer_name": name, "datum": date_iso, "start_hhmm": start_hhmm})
+    return out
+
+
+def extract_start_hhmm(zeit_txt: str) -> int:
+    """
+    Extrahiert Startzeit aus einem Text wie "18:15 - 19:15" als HHMM (z.B. 1815).
+    Wird für update_cancellations.py verwendet.
+    """
+    if not zeit_txt:
+        return -1
+    start_part = zeit_txt.split("-")[0].strip()
+    digits = re.sub(r"[^0-9]", "", start_part)
+    if len(digits) >= 3:
+        return int(digits[:2] + digits[2:4])
+    return -1
+
+
+def main() -> None:
+    load_dotenv()  # SUPABASE_URL und SUPABASE_KEY aus .env lesen (falls vorhanden)
+    supabase_url = os.environ.get("SUPABASE_URL")
+    supabase_key = os.environ.get("SUPABASE_KEY")
+    if not supabase_url or not supabase_key:
+        print("Bitte SUPABASE_URL und SUPABASE_KEY als ENV setzen.")
+        return
+    supabase = create_client(supabase_url, supabase_key)
+
+    cancellations = parse_cancellations()  # Liste von {offer_name, datum, start_hhmm}
+    if not cancellations:
+        print("Keine Ausfälle gefunden oder Seite nicht erreichbar.")
+        return
+
+    # Mapping Kursname(lower) -> [kursnr]
+    # Wir holen Angebote und Kurse gesammelt aus der DB, um offer_name → kursnr zu bilden
+    # offer_name ist jetzt in sportangebote, linked über offer_href
+    resp = supabase.table("sportkurse").select("kursnr, offer_href").execute()  # Kurse laden
+    kurs_rows = resp.data or []
+    
+    # Lade Angebote für Mapping offer_href -> name
+    resp_offers = supabase.table("sportangebote").select("href, name").execute()
+    offer_mapping = {row["href"]: row["name"] for row in (resp_offers.data or [])}
+    
+    name_to_kursnrs: Dict[str, List[str]] = {}
+    for row in kurs_rows:
+        offer_href = row.get("offer_href")
+        if not offer_href:
+            continue
+        # Get offer name from sportangebote
+        offer_name = offer_mapping.get(offer_href, "").strip().lower()
+        if not offer_name or not row.get("kursnr"):
+            continue
+        name_to_kursnrs.setdefault(offer_name, []).append(row["kursnr"])
+
+    rows_to_upsert: List[Dict[str, object]] = []
+    for canc in cancellations:  # jeden Ausfall prüfen
+        key = canc["offer_name"].strip().lower()
+        kursnrs = name_to_kursnrs.get(key, [])
+        if not kursnrs:
+            continue
+        
+        # Use start_time instead of datum+zeit (neues Schema)
+        # start_time ist timestamptz, wir brauchen nur das Datum
+        resp2 = (
+            supabase.table("kurs_termine")
+            .select("kursnr, start_time")
+            .in_("kursnr", kursnrs)
+            .gte("start_time", canc["datum"] + " 00:00:00")
+            .lt("start_time", canc["datum"] + " 23:59:59")
+            .execute()
+        )
+        term_rows = resp2.data or []
+        
+        for tr in term_rows:
+            start_time_str = tr.get("start_time", "")
+            if start_time_str:
+                # Extract hour and minute from start_time
+                from datetime import datetime as dt_from_str
+                start_dt = dt_from_str.fromisoformat(start_time_str.replace("Z", "+00:00"))
+                start_hhmm = start_dt.hour * 100 + start_dt.minute
+                
+                if start_hhmm == canc["start_hhmm"]:
+                    rows_to_upsert.append({"kursnr": tr["kursnr"], "start_time": start_time_str, "canceled": True})
+
+    if rows_to_upsert:
+        # Deduplizieren
+        seen = set()
+        uniq: List[Dict[str, object]] = []
+        for r in rows_to_upsert:
+            k = (r["kursnr"], r["start_time"])
+            if k in seen:
+                continue
+            seen.add(k)
+            uniq.append(r)
+        # Schritt 5: Idempotentes Upsert pro (kursnr, start_time)
+        supabase.table("kurs_termine").upsert(uniq, on_conflict="kursnr,start_time").execute()
+        print(f"Supabase: {len(uniq)} Ausfälle als canceled=true markiert (idempotent).")
+    else:
+        print("Keine passenden Termine zum Markieren gefunden.")
+
+    # WICHTIG: canceled Flag wird nur GESETZT, nie auf false zurückgesetzt
+    # Das Skript scrape_sportangebote.py muss das canceled Flag beim Upsert berücksichtigen
+    # (wird in scrape_sportangebote.py implementiert)
+    
+    # ETL-Run protokollieren
+    try:
+        supabase.table("etl_runs").insert({"component": "update_cancellations"}).execute()
+    except Exception:
+        pass
+
+
+if __name__ == "__main__":
+    main()
+
+# Hinweis (Academic Integrity): Bei der Erstellung dieser Datei wurde das Tool "Cursor"
+# unterstützend verwendet.
