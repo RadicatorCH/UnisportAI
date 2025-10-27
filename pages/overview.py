@@ -102,13 +102,48 @@ for offer in filtered_offers:
     # Create a card with better visual hierarchy
     st.markdown("---")
     
-    col1, col2 = st.columns([4, 1])
+    image_url = offer.get('image_url')
     
-    with col1:
-        # Check if we have an image
-        image_url = offer.get('image_url')
+    # Two column layout: left for details, right for image or button
+    col_left, col_right = st.columns([2.5, 1])
+    
+    with col_left:
+        st.markdown(f"### {offer.get('icon', '')} {offer.get('name', '')}")
+        intensity = offer.get('intensity', '').capitalize() if offer.get('intensity') else 'N/A'
+        
+        # Display info
+        info_parts = [f"Intensity: {intensity}"]
+        
+        if offer.get('focus'):
+            focus_short = ', '.join([f.capitalize() for f in offer.get('focus', [])[:2]])
+            if len(offer.get('focus', [])) > 2:
+                focus_short += '+'
+            info_parts.append(focus_short)
+        
+        # Add future events count
+        events_count = offer.get('future_events_count', 0)
+        if events_count > 0:
+            info_parts.append(f"📅 {events_count} upcoming")
+        
+        st.caption(' • '.join(info_parts))
+        
+        # Trainers
+        trainers = offer.get('trainers', [])
+        if trainers:
+            trainer_names = [t.get('name', '') for t in trainers[:2]]
+            trainers_str = ', '.join(trainer_names)
+            if len(trainers) > 2:
+                trainers_str += f" +{len(trainers)-2}"
+            st.caption(f"👤 {trainers_str}")
+        
+        # Rating
+        if offer.get('rating_count', 0) > 0:
+            rating = offer.get('avg_rating', 0)
+            st.caption(f"{'⭐' * int(rating)} {rating:.1f}/5 ({offer.get('rating_count', 0)} Bewertungen)")
+    
+    with col_right:
         if image_url:
-            # Create a styled container with background image
+            # Display image with gradient overlay and clickable button
             st.markdown(f"""
             <div style="
                 background-image: url('{image_url}');
@@ -117,8 +152,9 @@ for offer in filtered_offers:
                 background-color: #f0f0f0;
                 padding: 20px;
                 border-radius: 10px;
-                margin-bottom: 10px;
+                min-height: 150px;
                 position: relative;
+                margin-bottom: 10px;
             ">
                 <div style="
                     background: linear-gradient(to bottom, rgba(0,0,0,0.3), rgba(0,0,0,0.7));
@@ -129,62 +165,11 @@ for offer in filtered_offers:
                     bottom: 0;
                     border-radius: 10px;
                 "></div>
-                <div style="position: relative; z-index: 1; color: white;">
-                    <h3 style="color: white; margin: 0 0 10px 0;">{offer.get('icon', '')} {offer.get('name', '')}</h3>
-                    <p style="color: rgba(255,255,255,0.9); margin: 0;">{offer.get('intensity', '').capitalize() if offer.get('intensity') else 'N/A'} • {offer.get('future_events_count', 0)} upcoming • {'⭐' * int(offer.get('avg_rating', 0)) if offer.get('rating_count', 0) > 0 else 'No ratings yet'}</p>
-                </div>
             </div>
             """, unsafe_allow_html=True)
-        else:
-            # Fallback to old style without image
-            st.write(f"**{offer.get('icon', '')} {offer.get('name', '')}**")
-            intensity = offer.get('intensity', '').capitalize() if offer.get('intensity') else 'N/A'
-            
-            # Display info in a more compact way
-            info_parts = [f"Intensity: {intensity}"]
-            
-            if offer.get('focus'):
-                focus_short = ', '.join([f.capitalize() for f in offer.get('focus', [])[:2]])
-                if len(offer.get('focus', [])) > 2:
-                    focus_short += '+'
-                info_parts.append(focus_short)
-            
-            # Add future events count
-            events_count = offer.get('future_events_count', 0)
-            if events_count > 0:
-                info_parts.append(f"📅 {events_count} upcoming")
-            else:
-                info_parts.append("📅 No upcoming dates")
-            
-            # Add trainers
-            trainers = offer.get('trainers', [])
-            if trainers:
-                trainer_names = [f"{t.get('name', '')} ({t.get('rating', 'N/A')}⭐)" if t.get('rating') != 'N/A' else t.get('name', '') for t in trainers]
-                trainers_str = ', '.join(trainer_names[:2])  # Max 2 trainers shown
-                if len(trainers) > 2:
-                    trainers_str += f"+{len(trainers)-2}"
-                info_parts.append(f"👤 {trainers_str}")
-            
-            rating = f"{'⭐' * int(offer.get('avg_rating', 0))} {offer.get('avg_rating', 0):.2f}" if offer.get('rating_count', 0) > 0 else "No ratings yet"
-            if rating != "No ratings yet":
-                info_parts.append(rating)
-            
-            st.caption(' • '.join(info_parts))
-    
-    with col2:
-        # Elegant view button with rating display
-        if is_logged_in():
-            from data.rating import get_average_rating_for_offer
-            rating_info = get_average_rating_for_offer(offer['href'])
-            if rating_info['count'] > 0:
-                st.markdown(f"<div style='text-align: center; padding: 8px; background: #f0f2f6; border-radius: 6px; margin-bottom: 8px;'>"
-                           f"<strong>{rating_info['avg']}/5</strong><br>"
-                           f"⭐ {'⭐' * (int(rating_info['avg']) - 1)}<br>"
-                           f"<small style='color: #666;'>{rating_info['count']} Bewertungen</small></div>",
-                           unsafe_allow_html=True)
         
-        # Elegant view button
-        if st.button("📋 Details anzeigen", key=f"view_{offer['href']}", use_container_width=True, type="primary"):
+        # View details button
+        if st.button("📋 Details anzeigen", key=f"view_{offer['href']}", use_container_width=True):
             st.session_state['state_selected_offer'] = offer
             st.switch_page("pages/details.py")
     
@@ -293,7 +278,11 @@ for offer in filtered_offers:
             
             st.dataframe(events_display_data, use_container_width=True, hide_index=True)
             if len(upcoming_events) > 10:
-                st.caption(f"... and {len(upcoming_events) - 10} more dates")
+                remaining_count = len(upcoming_events) - 10
+                # Create a clickable link to view all dates
+                if st.button(f"📋 Show all {len(upcoming_events)} dates", key=f"show_all_{offer['href']}", use_container_width=True):
+                    st.session_state['state_selected_offer'] = offer
+                    st.switch_page("pages/details.py")
         else:
             st.info("No upcoming dates available")
     
