@@ -3,36 +3,21 @@ from st_supabase_connection import SupabaseConnection
 
 def supaconn():
     try:
-        # Versuche die Verbindung mit verschiedenen Methoden
-        # Methode 1: Direkt über st.connection mit Secrets (funktioniert in Cloud)
-        try:
-            conn = st.connection("supabase", type=SupabaseConnection)
+        # Versuche die Verbindung - Methode 1: Direkt über st.connection (funktioniert lokal und Cloud)
+        conn = st.connection("supabase", type=SupabaseConnection)
+        return conn
+    except Exception as e1:
+        # Fallback: Environment-Variablen als Alternative
+        import os
+        if "SUPABASE_URL" in os.environ and "SUPABASE_KEY" in os.environ:
+            url = os.environ.get("SUPABASE_URL")
+            key = os.environ.get("SUPABASE_KEY")
+            conn = st.connection("supabase", type=SupabaseConnection, url=url, key=key)
             return conn
-        except Exception as e1:
-            # Methode 2: Manuelle Übergabe der Parameter aus Secrets (funktioniert lokal)
-            try:
-                # Prüfe, ob secrets verfügbar sind
-                if "connections" in st.secrets and "supabase" in st.secrets.connections:
-                    url = st.secrets.connections.supabase.url
-                    key = st.secrets.connections.supabase.key
-                    conn = st.connection("supabase", type=SupabaseConnection, url=url, key=key)
-                    return conn
-                else:
-                    raise e1
-            except Exception as e2:
-                # Methode 3: Environment-Variablen als Fallback
-                import os
-                if "SUPABASE_URL" in os.environ and "SUPABASE_KEY" in os.environ:
-                    url = os.environ.get("SUPABASE_URL")
-                    key = os.environ.get("SUPABASE_KEY")
-                    conn = st.connection("supabase", type=SupabaseConnection, url=url, key=key)
-                    return conn
-                else:
-                    raise e2
-    except Exception as e:
-        st.error(f"Fehler bei der Supabase-Verbindung: {str(e)}")
-        st.info("Bitte stellen Sie sicher, dass die Supabase-Credentials in .streamlit/secrets.toml (lokal) oder in den Streamlit Cloud Secrets konfiguriert sind.")
-        raise
+        else:
+            st.error(f"Fehler bei der Supabase-Verbindung: {str(e1)}")
+            st.info("Bitte stellen Sie sicher, dass die Supabase-Credentials in .streamlit/secrets.toml (lokal) oder in den Streamlit Cloud Secrets konfiguriert sind.")
+            raise
 
 def angebote():
     conn = supaconn()
