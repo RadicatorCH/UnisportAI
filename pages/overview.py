@@ -99,7 +99,10 @@ st.info(f"Showing {len(filtered_offers)} of {len(offers)} activities")
 
 # Display in a responsive card layout with image backgrounds
 for offer in filtered_offers:
-    col1, col2 = st.columns([5, 1])
+    # Create a card with better visual hierarchy
+    st.markdown("---")
+    
+    col1, col2 = st.columns([4, 1])
     
     with col1:
         # Check if we have an image
@@ -169,20 +172,21 @@ for offer in filtered_offers:
             st.caption(' • '.join(info_parts))
     
     with col2:
-        if st.button("View", key=f"view_{offer['href']}", use_container_width=True):
+        # Elegant view button with rating display
+        if is_logged_in():
+            from data.rating import get_average_rating_for_offer
+            rating_info = get_average_rating_for_offer(offer['href'])
+            if rating_info['count'] > 0:
+                st.markdown(f"<div style='text-align: center; padding: 8px; background: #f0f2f6; border-radius: 6px; margin-bottom: 8px;'>"
+                           f"<strong>{rating_info['avg']}/5</strong><br>"
+                           f"⭐ {'⭐' * (int(rating_info['avg']) - 1)}<br>"
+                           f"<small style='color: #666;'>{rating_info['count']} Bewertungen</small></div>",
+                           unsafe_allow_html=True)
+        
+        # Elegant view button
+        if st.button("📋 Details anzeigen", key=f"view_{offer['href']}", use_container_width=True, type="primary"):
             st.session_state['state_selected_offer'] = offer
             st.switch_page("pages/details.py")
-    
-    # Rating widget in expander at the bottom
-    if is_logged_in():
-        from data.rating import render_sportangebot_rating_widget, get_average_rating_for_offer
-        rating_info = get_average_rating_for_offer(offer['href'])
-        
-        if rating_info['count'] > 0:
-            st.caption(f"⭐ Bewertung: {rating_info['avg']}/5 ({rating_info['count']} Bewertungen)")
-        
-        with st.expander("⭐ Diesen Sport bewerten", expanded=False):
-            render_sportangebot_rating_widget(offer['href'])
     
     # Add expander with upcoming dates for each activity
     with st.expander("📅 Upcoming Dates", expanded=False):
