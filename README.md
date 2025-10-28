@@ -14,7 +14,7 @@ Eine intelligente Streamlit-basierte Webanwendung zur Entdeckung und Verwaltung 
 - [Deployment](#-deployment)
 - [Troubleshooting](#-troubleshooting)
 - [Contributing](#-contributing)
-- [Kontakt & Support](#-kontakt--support)
+- [Transparenzhinweis zu KI-gestützter Entwicklung](#-transparenzhinweis-zu-ki-gestützter-entwicklung)
 
 ## 🎉 Projektübersicht
 
@@ -110,8 +110,8 @@ Bevor du startest, stelle sicher dass du folgendes installiert hast:
 ### Schritt 1: Repository klonen
 
 ```bash
-git clone https://github.com/deinusername/unisport.git
-cd unisport
+git clone https://github.com/RadicatorCH/UnisportAI.git
+cd UnisportAI
 ```
 
 ### Schritt 2: Abhängigkeiten installieren
@@ -866,7 +866,7 @@ Wir freuen uns über Beiträge! Hier ist wie du helfen kannst:
 
 1. **Fork das Repository**
    ```bash
-   git fork https://github.com/deinusername/unisport.git
+   git fork https://github.com/RadicatorCH/UnisportAI.git
    ```
 
 2. **Erstelle Feature Branch**
@@ -909,18 +909,6 @@ Bei Bug Reports bitte folgende Information angeben:
 - Steps to Reproduce
 - Screenshots wenn relevant
 
-## 📞 Kontakt & Support
-
-### Projektbetreuer
-
-- **GitHub**: [@deinusername](https://github.com/deinusername)
-- **Email**: deine-email@example.com
-
-### Community
-
-- **Issues**: [GitHub Issues](https://github.com/deinusername/unisport/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/deinusername/unisport/discussions)
-
 ### Weitere Ressourcen
 
 - **Streamlit Docs**: [docs.streamlit.io](https://docs.streamlit.io)
@@ -929,7 +917,24 @@ Bei Bug Reports bitte folgende Information angeben:
 
 ### Lizenz
 
-Dieses Projekt ist lizenziert unter der MIT License - siehe LICENSE file für Details.
+Dieses Projekt ist aktuell ohne explizite Lizenz. Alle Rechte vorbehalten.
+
+## 🤖 Transparenzhinweis zu KI-gestützter Entwicklung
+
+Dieses Repository wurde unter Verwendung von KI-gestützten Tools und Agenten entwickelt, darunter:
+
+- **Cursor IDE**: KI-gestützte Code-Vervollständigung und Generierung
+- **AI Coding Agents**: Automatisierte Code-Generierung und Refactoring
+
+Die Verwendung von KI-Tools in der Softwareentwicklung wird als Best Practice zunehmend transparent dokumentiert. Dieser Abschnitt informiert über den Einsatz solcher Technologien in diesem Projekt.
+
+### Was bedeutet das für Nutzer?
+
+✅ **Code-Qualität**: Alle KI-generierten Code-Bereiche wurden sorgfältig überprüft und getestet
+
+✅ **Transparenz**: Dieser Hinweis gewährleistet Ehrlichkeit über den Entwicklungsprozess
+
+✅ **Verantwortung**: Die endgültige Verantwortung für Code und Funktionalität liegt beim Autor
 
 ---
 
