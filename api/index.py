@@ -1,63 +1,96 @@
 """
-FastAPI Endpoint für iCal Feed
-Hosted on Vercel
+iCal Feed Handler für Vercel
+Native Vercel Python Function
 """
-from fastapi import FastAPI, Query, HTTPException, Request
-from fastapi.responses import Response
+
 from supabase import create_client
 import os
 from datetime import datetime, timedelta
 from typing import Optional
 from icalendar import Calendar, Event, Alarm, vCalAddress, vText
-import sys
-
-app = FastAPI(title="Unisport iCal Feed")
-
-# Supabase Credentials from Environment Variables
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
-
-if not SUPABASE_URL or not SUPABASE_KEY:
-    import warnings
-    warnings.warn("Missing Supabase credentials. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.")
+from http.server import BaseHTTPRequestHandler
+import json
 
 
-@app.get("/")
-def root():
-    return {"message": "Unisport iCal Feed API", "version": "1.0.0"}
-
-
-@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
-async def handler(request: Request, path: str):
+def handler(request):
     """
-    Catch-all handler for all routes - needed for Vercel Python runtime
+    Vercel Python Handler
+    https://vercel.com/docs/functions/runtimes/python
     """
-    # Direct to specific endpoints
-    if path == "" or path == "ical-feed":
-        return await get_ical_feed(request.query_params.get("token"))
-    elif path == "api/health":
-        return {"status": "healthy"}
     
-    # Default
-    return {"message": "Unisport iCal Feed API", "version": "1.0.0"}
-
-
-async def get_ical_feed(token: Optional[str] = None):
-    """
-    Generate personalized iCal feed for user
-    Access via: https://your-app.vercel.app/ical-feed?token=YOUR_TOKEN
-    """
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing token parameter")
+    # Get query parameters
+    query_params = request.args
     
+    # Route handling
+    if request.path == '/' or request.path == '':
+        return Response(
+            json.dumps({"message": "Unisport iCal Feed API", "version": "1.0.0"}),
+            status_code=200,
+            headers={'Content-Type': 'application/json'}
+        )
+    
+    if request.path == '/ical-feed':
+        token = query_params.get('token')
+        
+        if not token:
+            return Response(
+                json.dumps({"error": "Missing token parameter"}),
+                status_code=401,
+                headers={'Content-Type': 'application/json'}
+            )
+        
+        # Get Supabase credentials
+        supabase_url = os.environ.get("SUPABASE_URL", "")
+        supabase_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+        
+        if not supabase_url or not supabase_key:
+            return Response(
+                json.dumps({"error": "Missing Supabase credentials"}),
+                status_code=500,
+                headers={'Content-Type': 'application/json'}
+            )
+        
+        try:
+            # Generate iCal feed
+            ical_content = generate_ical_feed(supabase_url, supabase_key, token)
+            
+            return Response(
+                ical_content,
+                status_code=200,
+                headers={
+                    'Content-Type': 'text/calendar; charset=utf-8',
+                    'Content-Disposition': 'inline; filename=unisport_meine_kurse.ics'
+                }
+            )
+        except Exception as e:
+            return Response(
+                json.dumps({"error": str(e)}),
+                status_code=500,
+                headers={'Content-Type': 'application/json'}
+            )
+    
+    # 404
+    return Response(
+        json.dumps({"error": "Not found"}),
+        status_code=404,
+        headers={'Content-Type': 'application/json'}
+    )
+
+
+def generate_ical_feed(supabase_url: str, supabase_key: str, token: str) -> str:
+    """Generate iCal feed content"""
     try:
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        supabase = create_client(supabase_url, supabase_key)
         
         # Lookup user by ical_feed_token
         user_result = supabase.table('users').select('id, email, name, ical_feed_token').eq('ical_feed_token', token).single().execute()
         
         if not user_result.data:
-            raise HTTPException(status_code=401, detail="Invalid token")
+            # Return empty calendar
+            cal = Calendar()
+            cal.add('version', '2.0')
+            cal.add('prodid', '-//Unisport AI//EN')
+            return cal.to_ical().decode('utf-8')
         
         user_data = user_result.data
         user_id = user_data['id']
@@ -75,7 +108,7 @@ async def get_ical_feed(token: Optional[str] = None):
             cal.add('X-WR-CALNAME', 'Unisport Meine Kurse')
             cal.add('X-WR-TIMEZONE', 'Europe/Zurich')
             cal.add('X-WR-CALDESC', 'Meine angemeldeten Sportkurse')
-            return Response(content=cal.to_ical(), media_type="text/calendar", headers={"Content-Disposition": "inline; filename=unisport.ics"})
+            return cal.to_ical().decode('utf-8')
         
         # Parse events and get course dates
         event_ids = [n['event_id'] for n in notifications.data]
@@ -183,17 +216,14 @@ async def get_ical_feed(token: Optional[str] = None):
             
             cal.add_component(ical_event)
         
-        return Response(
-            content=cal.to_ical(),
-            media_type="text/calendar",
-            headers={"Content-Disposition": "inline; filename=unisport_meine_kurse.ics"}
-        )
+        return cal.to_ical().decode('utf-8')
         
-    except HTTPException:
-        raise
     except Exception as e:
-        print(f"Error generating iCal feed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return empty calendar on error
+        cal = Calendar()
+        cal.add('version', '2.0')
+        cal.add('prodid', '-//Unisport AI//EN')
+        return cal.to_ical().decode('utf-8')
 
 
 def get_friends_emails_for_event(supabase_client, event_id: str, user_id: str) -> list:
@@ -231,10 +261,4 @@ def get_friends_emails_for_event(supabase_client, event_id: str, user_id: str) -
         
     except Exception:
         return []
-
-
-# For Vercel
-@app.get("/api/health")
-async def health_check():
-    return {"status": "healthy"}
 
