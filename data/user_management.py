@@ -363,8 +363,18 @@ def render_user_profile_page():
                 project_ref = supabase_url.replace("https://", "").replace(".supabase.co", "") if supabase_url else ""
                 
                 if project_ref:
-                    # Generate personalized Feed URL with token from Vercel
-                    ical_feed_url = f"https://unisport-f2hi9yvwz-radicatorchs-projects.vercel.app/ical-feed?token={ical_token}"
+                    # Generate personalized Feed URL with token from Vercel FastAPI
+                    # Using VERCEL_AUTOMATION_BYPASS_SECRET to bypass protection
+                    try:
+                        vercel_bypass = st.secrets.get("vercel", {}).get("bypass_secret", "")
+                        if vercel_bypass:
+                            ical_feed_url = f"https://unisport-f2hi9yvwz-radicatorchs-projects.vercel.app/ical-feed?token={ical_token}&x-vercel-protection-bypass={vercel_bypass}"
+                        else:
+                            # Fallback to Supabase Edge Function
+                            ical_feed_url = f"https://{project_ref}.supabase.co/functions/v1/ical-feed?token={ical_token}"
+                    except:
+                        # Fallback to Supabase Edge Function
+                        ical_feed_url = f"https://{project_ref}.supabase.co/functions/v1/ical-feed?token={ical_token}"
                     
                     st.text_input("🔗 Deine persönliche iCal Feed URL", ical_feed_url, disabled=True, label_visibility="visible")
                     st.caption("💡 Kopiere diese URL und füge sie zu deinem Kalender hinzu")

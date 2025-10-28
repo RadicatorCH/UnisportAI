@@ -27,6 +27,9 @@ wheels/
 .streamlit/secrets.toml
 SECRETS_FOR_STREAMLIT_CLOUD.txt
 
+# Vercel
+VERCEL_AUTOMATION_BYPASS_SECRET
+
 # IDE
 .idea/
 .vscode/

@@ -12,12 +12,13 @@ from icalendar import Calendar, Event, Alarm, vCalAddress, vText
 
 app = FastAPI(title="Unisport iCal Feed")
 
-# Supabase Credentials
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+# Supabase Credentials from Environment Variables
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("Missing Supabase credentials")
+    import warnings
+    warnings.warn("Missing Supabase credentials. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables.")
 
 
 @app.get("/")
