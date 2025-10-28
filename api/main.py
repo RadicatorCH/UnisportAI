@@ -12,6 +12,11 @@ from icalendar import Calendar, Event, Alarm, vCalAddress, vText
 
 app = FastAPI(title="Unisport iCal Feed")
 
+# Handler für Vercel
+def handler(request):
+    # This will be called by Vercel
+    pass
+
 # Supabase Credentials from Environment Variables
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")

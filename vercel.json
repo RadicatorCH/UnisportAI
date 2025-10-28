@@ -8,15 +8,7 @@
   ],
   "routes": [
     {
-      "src": "/ical-feed",
-      "dest": "api/main.py"
-    },
-    {
-      "src": "/api/health",
-      "dest": "api/main.py"
-    },
-    {
-      "src": "/",
+      "src": "/(.*)",
       "dest": "api/main.py"
     }
   ]
