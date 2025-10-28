@@ -66,7 +66,6 @@ from bs4 import BeautifulSoup
 from supabase import create_client
 # - dotenv.load_dotenv: Liest die .env-Datei (damit Keys nicht im Code stehen)
 from dotenv import load_dotenv
-import csv
 import json
 import urllib3
 
@@ -474,7 +473,10 @@ def apply_overrides(supabase) -> None:
 def generate_missing_info_csv(supabase) -> List[Dict[str, str]]:
     """
     Ermittelt fehlende Felder in sportangebote, sportkurse, kurs_termine und unisport_locations
-    und schreibt sie als CSV nach .scraper/missing_info.csv.
+    und merged sie direkt in .scraper/missing_overrides.json.
+    Für jeden neu erkannten Identifier wird (falls noch nicht vorhanden) ein Eintrag mit
+    { identifier, fields: {}, ignore_valueerror: false } angelegt. Bereits vorhandene Einträge
+    behalten ihren bestehenden ignore_valueerror-Wert (insbesondere true bleibt true).
     """
     rows: List[Dict[str, str]] = []
 
@@ -573,23 +575,12 @@ def generate_missing_info_csv(supabase) -> List[Dict[str, str]]:
     except Exception:
         pass
 
-    # CSV schreiben
+    # Missing-Einträge direkt in missing_overrides.json mergen (CSV entfällt)
     try:
-        out_path = os.path.join(os.path.dirname(__file__), "missing_info.csv")
-        with open(out_path, "w", encoding="utf-8", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["table_name", "identifier", "missing_field", "context1", "context2"])
-            for r in rows:
-                writer.writerow([
-                    r.get("table_name", ""),
-                    r.get("identifier", ""),
-                    r.get("missing_field", ""),
-                    r.get("context1", ""),
-                    r.get("context2", ""),
-                ])
-        print(f"CSV geschrieben: {out_path} ({len(rows)} Zeilen)")
+        _merge_missing_into_overrides(rows)
+        print(f"missing_overrides.json aktualisiert (Missing-Merge) mit {len(rows)} Einträgen")
     except Exception as e:
-        print(f"Fehler beim Schreiben der CSV: {e}")
+        print(f"Fehler beim Aktualisieren von missing_overrides.json: {e}")
     return rows
 
 
@@ -624,6 +615,92 @@ def _build_ignore_set_from_overrides(overrides: Dict[str, object]) -> set:
             except Exception:
                 continue
     return ignore
+
+
+def _save_overrides_json(data: Dict[str, object]) -> None:
+    """Speichert die Overrides-JSON atomar zurück auf die Platte."""
+    overrides_path = os.path.join(os.path.dirname(__file__), "missing_overrides.json")
+    tmp_path = overrides_path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp_path, overrides_path)
+
+
+def _ensure_ignore_flags(data: Dict[str, object]) -> None:
+    """Setzt für alle Items standardmäßig ignore_valueerror=false, falls Schlüssel fehlt.
+    Bestehende true-Werte bleiben unberührt.
+    """
+    for key in [
+        "sportangebote",
+        "sportkurse",
+        "kurs_termine",
+        "unisport_locations",
+    ]:
+        items = data.get(key)
+        if isinstance(items, list):
+            for it in items:
+                if isinstance(it, dict) and ("ignore_valueerror" not in it):
+                    it["ignore_valueerror"] = False
+
+
+def _merge_missing_into_overrides(rows: List[Dict[str, str]]) -> None:
+    """Merge der fehlenden Identifier in missing_overrides.json.
+
+    - Fügt pro (table_name, identifier) einen Eintrag hinzu, falls noch nicht vorhanden.
+    - Legt standardmäßig fields={} und ignore_valueerror=false an.
+    - Wenn der Eintrag existiert, wird fehlender ignore_valueerror auf false ergänzt (true bleibt).
+    """
+    data = _load_overrides_json() or {}
+
+    # Stelle sicher, dass die vier Hauptlisten existieren
+    for key in ["sportangebote", "sportkurse", "kurs_termine", "unisport_locations"]:
+        if key not in data or not isinstance(data.get(key), list):
+            data[key] = []
+
+    # Schneller Lookup pro Bereich: identifier -> item
+    def _index_by_identifier(items: List[Dict[str, object]]) -> Dict[str, Dict[str, object]]:
+        idx: Dict[str, Dict[str, object]] = {}
+        for it in items:
+            if isinstance(it, dict):
+                ident = (it.get("identifier") or "").strip()
+                if ident:
+                    idx[ident] = it
+        return idx
+
+    indexes = {
+        "sportangebote": _index_by_identifier(data["sportangebote"]),
+        "sportkurse": _index_by_identifier(data["sportkurse"]),
+        "kurs_termine": _index_by_identifier(data["kurs_termine"]),
+        "unisport_locations": _index_by_identifier(data["unisport_locations"]),
+    }
+
+    for r in rows:
+        table = (r.get("table_name") or "").strip()
+        identifier = (r.get("identifier") or "").strip()
+        if not table or not identifier:
+            continue
+        if table not in data:
+            continue
+
+        idx = indexes.get(table) or {}
+        existing = idx.get(identifier)
+        if existing is None:
+            # Neu anlegen
+            new_item: Dict[str, object] = {
+                "identifier": identifier,
+                "fields": {},
+                "ignore_valueerror": False,
+            }
+            data[table].append(new_item)  # type: ignore[arg-type]
+            idx[identifier] = new_item
+        else:
+            # Flag standardmäßig ergänzen, true bleibt true
+            if "ignore_valueerror" not in existing:
+                existing["ignore_valueerror"] = False
+
+    # Global sicherstellen, dass alle Items das Flag haben
+    _ensure_ignore_flags(data)
+    _save_overrides_json(data)
 
 
 def send_missing_info_email_if_needed(rows: List[Dict[str, str]]) -> None:
@@ -835,16 +912,16 @@ def main() -> None:
     #          wurde nach update_cancellations.py ausgelagert, damit beide
     #          Skripte unabhängig voneinander lauffähig sind.
 
-    # 7) Missing-Info-Report erzeugen
+    # 7) Missing-Info in missing_overrides.json aktualisieren und optional E-Mail senden
     try:
         # 7a) Optionale Overrides anwenden, falls Datei vorhanden
         apply_overrides(supabase)
-        # 7b) Danach Report generieren
+        # 7b) Danach Missing ermitteln und in missing_overrides.json mergen (keine CSV mehr)
         rows = generate_missing_info_csv(supabase)
         # 7c) Falls fehlende Einträge vorhanden sind, E-Mail an Admin schicken
         send_missing_info_email_if_needed(rows)
     except Exception as e:
-        print(f"Warnung: Missing-Info-CSV konnte nicht erzeugt werden: {e}")
+        print(f"Warnung: Missing-Info konnte nicht aktualisiert/versendet werden: {e}")
 
 
 if __name__ == "__main__":
