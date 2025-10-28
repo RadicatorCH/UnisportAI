@@ -350,7 +350,9 @@ Unisport/
 │   ├── rating.py             # Bewertungssystem
 │   ├── security.py           # Sicherheits-Features
 │   ├── tos_acceptance.py    # Terms of Service Acceptance
-│   └── user_management.py    # Benutzerverwaltung
+│   ├── user_management.py    # Benutzerverwaltung
+│   ├── email_service.py      # E-Mail-Service via Loops.io
+│   └── ical_generator.py     # iCal-Feed-Generierung
 ├── supabase/                 # 🗄 Datenbank und Edge Functions
 │   ├── migrations/           # SQL-Migrationen
 │   └── functions/
