@@ -474,6 +474,174 @@ Dies erleichtert die Navigation im Code und verhindert Namenskonflikte.
 - iCal Feed Generation
 - Navigation zwischen Wochen
 
+#### pages/admin.py
+**Zweck**: Admin-Panel für Systemverwaltung
+
+**Features**:
+- Benutzerübersicht und -verwaltung
+- Rollen-Management (Admin-Berechtigungen)
+- System-Statistiken und Metriken
+- Bulk-Operationen für alle Nutzer
+- Nur für Administratoren zugänglich
+
+**Zugriffskontrolle**:
+- Prüft Admin-Berechtigung via `is_admin()`
+- Zeigt Fehler bei unberechtigtem Zugriff
+
+#### pages/athletes.py
+**Zweck**: Sportfreunde finden und vernetzen
+
+**Features**:
+- Öffentliche Benutzerprofile durchsuchen
+- Freundschaftsanfragen senden/empfangen
+- Freundschaftsstatus verwalten
+- Community-Features für Sport-Partner
+- Integration mit Event-Teilnahme
+
+**Funktionen**:
+- `get_public_users()` - Lädt öffentliche Profile
+- `get_friend_status()` - Prüft Freundschaftsstatus
+- `send_friend_request()` - Sendet Freundschaftsanfrage
+
+#### pages/profile.py
+**Zweck**: Benutzerprofil-Verwaltung
+
+**Features**:
+- Persönliche Profileinstellungen
+- Öffentliches/Privates Profil
+- Bio und Profilbild
+- Account-Einstellungen
+- Datenschutz-Präferenzen
+
+**Integration**:
+- Nutzt `render_user_profile_page()` aus user_management
+- Authentifizierung erforderlich
+
+#### data/rating.py
+**Zweck**: Bewertungssystem für Kurse und Trainer
+
+**Funktionen**:
+- `render_sportangebot_rating_widget()` - Rating-Widget für Kurse
+- `render_trainer_rating_widget()` - Rating-Widget für Trainer
+- Bewertungen von 1-5 Sternen
+- Optional: Textkommentare
+
+**Features**:
+- Zeigt bestehende Bewertungen an
+- Erlaubt Aktualisierung von Bewertungen
+- Nur für eingeloggte Benutzer
+- Integration mit Supabase-Datenbank
+
+#### data/security.py
+**Zweck**: Sicherheits-Utilities für Input-Validierung
+
+**Funktionen**:
+- `sanitize_html()` - HTML-Escaping gegen XSS
+- `validate_rating()` - Validiert Rating-Werte (1-5)
+- `validate_comment()` - Validiert Kommentar-Text
+- Schutz vor Code-Injection
+- Erkennung gefährlicher Patterns
+
+**Sicherheits-Patterns**:
+- Blockiert Script-Tags und JavaScript
+- Verhindert Event-Handler-Injection
+- Prüft Eingabelänge (max 2000 Zeichen)
+- HTML-Escaping für alle User-Inputs
+
+#### data/state_manager.py
+**Zweck**: Session State Management
+
+**Funktionen**:
+- `get_filter_state()` - Liest Filter-Status
+- `set_filter_state()` - Setzt Filter-Status
+- `clear_filter_states()` - Löscht alle Filter
+- `init_multiple_offers_state()` - Multi-Select-Status
+- Konsistente State-Keys mit Prefix-System
+
+**Pattern**:
+- Zentrale State-Verwaltung für alle Seiten
+- Verhindert State-Konflikte
+- Ermöglicht Filter-Persistenz über Seitenwechsel
+- Key-Mapping für strukturierte Verwaltung
+
+#### data/shared_sidebar.py
+**Zweck**: Gemeinsame Filter-Sidebar für alle Seiten
+
+**Funktionen**:
+- `render_shared_sidebar()` - Rendert Filter-UI
+- Unterstützt verschiedene Filter-Types
+- Integriert mit state_manager
+- Lädt Events bei Bedarf
+
+**Filter-Kategorien**:
+- Hauptseiten-Filter (Suche, Intensität, Fokus, Setting)
+- Detail-Filter (Datum, Zeit, Ort, Wochentag)
+- Event-Filter (Abgesagte Kurse ausblenden)
+- Dynamische Filter-Optionen basierend auf Daten
+
+#### data/tos_acceptance.py
+**Zweck**: Terms of Service und Privacy Policy Acceptance
+
+**Funktionen**:
+- `check_tos_acceptance()` - Prüft Acceptance-Status
+- `show_tos_acceptance_required()` - Zeigt Acceptance-UI
+- `accept_tos_and_privacy()` - Speichert Acceptance
+- GDPR-konform
+
+**Workflow**:
+- Prüft bei jedem Login
+- Blockiert App-Zugriff bis Acceptance
+- Zeitstempel für Audit-Trail
+- Integration mit Supabase users-Tabelle
+
+#### data/user_management.py
+**Zweck**: Erweiterte User-Management Features
+
+**Funktionen**:
+- `is_admin()` - Prüft Admin-Berechtigung
+- `get_user_profile()` - Lädt vollständiges Profil
+- `submit_sportangebot_rating()` - Speichert Kurs-Bewertung
+- `submit_trainer_rating()` - Speichert Trainer-Bewertung
+- `render_admin_panel()` - Rendert Admin-Interface
+- `render_user_profile_page()` - Rendert Profil-Seite
+
+**Features**:
+- Rollen-basierte Zugriffskontrolle
+- Session-State-Caching für Performance
+- Vollständige CRUD-Operationen für Profile
+- Admin-Dashboard mit Statistiken
+
+#### data/email_service.py
+**Zweck**: E-Mail-Service via Loops.io
+
+**Funktionen**:
+- `generate_ical_event()` - Generiert iCal-Event-String
+- `send_event_email()` - Sendet Event-E-Mail
+- Integration mit Loops.io API
+- Kalender-Event-Anhänge
+
+**Features**:
+- iCal-Formatierung für E-Mail-Anhänge
+- Automatische Zeitzone-Konvertierung
+- Event-Erinnerungen
+- Fehlerbehandlung und Logging
+
+#### data/ical_generator.py
+**Zweck**: Dynamische iCal-Feed-Generierung
+
+**Funktionen**:
+- `generate_ical_feed()` - Erstellt vollständigen iCal-Feed
+- `get_friends_emails_for_event()` - Lädt Freunde-E-Mails
+- `format_ical_date()` - Formatiert Datums-Strings
+- Professionelle icalendar Library
+
+**Features**:
+- Friend ATTENDEE Support
+- Alarm/Reminder-Integration (15 Min vorher)
+- Kompatibel mit Google Calendar, Outlook, Apple Calendar
+- Personalisierte Feeds mit Token-basiertem Zugriff
+- Automatische Updates bei Änderungen
+
 ## 👨‍💻 Entwickler-Guide
 
 ### Code-Style
