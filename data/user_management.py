@@ -116,6 +116,53 @@ def update_user_preferences(preferences: Dict[str, Any]) -> bool:
         return False
 
 
+def _map_weekdays_ui_to_codes(weekdays_en: list) -> list:
+    """Mapt UI-Strings ('Monday'..'Sunday') auf weekday_type Codes ('mon'..'sun')."""
+    en_to_code = {
+        'Monday': 'mon',
+        'Tuesday': 'tue',
+        'Wednesday': 'wed',
+        'Thursday': 'thu',
+        'Friday': 'fri',
+        'Saturday': 'sat',
+        'Sunday': 'sun',
+    }
+    return [en_to_code.get(w, w) for w in (weekdays_en or [])]
+
+
+def save_sidebar_preferences(
+    intensities: list | None,
+    focus: list | None,
+    settings: list | None,
+    locations: list | None,
+    weekdays_en: list | None,
+) -> bool:
+    """Speichert die aktuellen Sidebar-Filter als Standard in public.users.
+
+    Schreibt in: preferred_intensities, preferred_focus, preferred_settings,
+    favorite_location_names, preferred_weekdays.
+    """
+    user_sub = get_user_sub()
+    if not user_sub:
+        return False
+
+    try:
+        client = get_supabase_client()
+        update_payload = {
+            "preferred_intensities": intensities or None,
+            "preferred_focus": focus or None,
+            "preferred_settings": settings or None,
+            "favorite_location_names": locations or None,
+            "preferred_weekdays": _map_weekdays_ui_to_codes(weekdays_en or []),
+            "updated_at": datetime.now().isoformat(),
+        }
+        client.table("users").update(update_payload).eq("sub", user_sub).execute()
+        return True
+    except Exception as e:
+        st.error(f"Fehler beim Speichern der Sidebar-Defaults: {e}")
+        return False
+
+
 def get_user_favorites() -> list:
     """Lädt die Lieblings-Sportarten des aktuellen Users aus der Datenbank"""
     user_sub = get_user_sub()
@@ -342,6 +389,8 @@ def render_user_profile_page():
                 st.rerun()
             else:
                 st.error("Fehler beim Speichern der Favoriten")
+
+        # Personalisierungs-Präferenzen entfernt
     
     # New tab for calendar and additional settings
     with tab3:

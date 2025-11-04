@@ -1,89 +1,94 @@
-"""
-State Manager für Streamlit App
-
-Verwaltet den session_state für die Kommunikation zwischen den Seiten.
-"""
-
 import streamlit as st
+from typing import Any, List
 
-# Global filter state keys - using state_filter_* prefix
-FILTER_KEYS = {
-    'show_upcoming_only': 'state_filter_upcoming_only',
-    'search_text': 'state_filter_search_text',
-    'intensity': 'state_filter_intensity',
-    'focus': 'state_filter_focus',
-    'setting': 'state_filter_setting',
-    'offers': 'state_filter_offers',
-    'hide_cancelled': 'state_filter_hide_cancelled',
-    'date_start': 'state_filter_date_start',
-    'date_end': 'state_filter_date_end',
-    'location': 'state_filter_location',
-    'weekday': 'state_filter_weekday',
-    'time_start': 'state_filter_time_start',
-    'time_end': 'state_filter_time_end',
-}
 
-def get_filter_state(filter_name: str, default=None):
-    """Gets a filter state"""
-    key = FILTER_KEYS.get(filter_name, f'filter_{filter_name}')
+def _map_weekdays_db_to_ui(weekday_codes: List[str]) -> List[str]:
+    """Maps weekday_type enum codes to UI strings used in filters.py/shared_sidebar.py"""
+    code_to_en = {
+        'mon': 'Monday',
+        'tue': 'Tuesday',
+        'wed': 'Wednesday',
+        'thu': 'Thursday',
+        'fri': 'Friday',
+        'sat': 'Saturday',
+        'sun': 'Sunday',
+    }
+    return [code_to_en.get(code, code) for code in (weekday_codes or [])]
+
+
+def _ensure_preferences_loaded():
+    """Loads user preferences from DB once into session_state for filter defaults."""
+    if st.session_state.get("_prefs_loaded", False):
+        return
+
+    try:
+        # Load user profile
+        from data.auth import get_user_sub
+        from data.supabase_client import get_user_from_db, get_offers_with_stats
+        from data.user_management import get_user_favorites
+
+        user_sub = get_user_sub()
+        if not user_sub:
+            st.session_state["_prefs_loaded"] = True
+            return
+
+        profile = get_user_from_db(user_sub)
+        if not profile:
+            st.session_state["_prefs_loaded"] = True
+            return
+
+        # Map preferred columns to sidebar filter keys
+        preferred_intensities = profile.get('preferred_intensities') or []
+        preferred_focus = profile.get('preferred_focus') or []
+        preferred_settings = profile.get('preferred_settings') or []
+        favorite_location_names = profile.get('favorite_location_names') or []
+        preferred_weekdays_codes = profile.get('preferred_weekdays') or []
+
+        # Write defaults only if not already set in session
+        if 'intensity' not in st.session_state:
+            st.session_state['intensity'] = preferred_intensities
+        if 'focus' not in st.session_state:
+            st.session_state['focus'] = preferred_focus
+        if 'setting' not in st.session_state:
+            st.session_state['setting'] = preferred_settings
+        if 'location' not in st.session_state:
+            st.session_state['location'] = favorite_location_names
+        if 'weekday' not in st.session_state:
+            st.session_state['weekday'] = _map_weekdays_db_to_ui(preferred_weekdays_codes)
+
+        # Preload favorite sports into 'offers' by names (sidebar expects names)
+        if 'offers' not in st.session_state:
+            try:
+                favorite_hrefs = get_user_favorites()  # list of hrefs
+                if favorite_hrefs:
+                    offers = get_offers_with_stats() or []
+                    href_to_name = {o.get('href'): o.get('name') for o in offers}
+                    favorite_names = [href_to_name[h] for h in favorite_hrefs if h in href_to_name]
+                    if favorite_names:
+                        st.session_state['offers'] = favorite_names
+            except Exception:
+                pass
+
+        st.session_state["_prefs_loaded"] = True
+    except Exception:
+        # Fail silent; UI will use its own defaults
+        st.session_state["_prefs_loaded"] = True
+
+
+def get_filter_state(key: str, default: Any) -> Any:
+    """Returns filter value from session_state, preloading user prefs once."""
+    _ensure_preferences_loaded()
     return st.session_state.get(key, default)
 
-def set_filter_state(filter_name: str, value):
-    """Sets a filter state"""
-    key = FILTER_KEYS.get(filter_name, f'filter_{filter_name}')
+
+def set_filter_state(key: str, value: Any):
+    """Sets a filter value into session_state."""
     st.session_state[key] = value
 
-def clear_filter_states():
-    """Clears all filter states"""
-    for key in FILTER_KEYS.values():
-        if key in st.session_state:
-            del st.session_state[key]
 
-def init_multiple_offers_state(offer_hrefs: list, multiselect_key: str = "state_selected_offers_multiselect"):
-    """Initializes state for multiple offers"""
-    if multiselect_key not in st.session_state or not st.session_state.get(multiselect_key):
-        st.session_state[multiselect_key] = offer_hrefs.copy()
+def init_multiple_offers_state(default_hrefs: List[str], state_key: str):
+    """Initializes state for multiple offers selection, if missing."""
+    if state_key not in st.session_state:
+        st.session_state[state_key] = list(default_hrefs or [])
 
-def get_multiselect_value(multiselect_key: str = "state_selected_offers_multiselect", default=None):
-    """Gets the current multiselect value"""
-    return st.session_state.get(multiselect_key, default)
-
-def set_multiselect_value(multiselect_key: str, value):
-    """Sets the multiselect value"""
-    st.session_state[multiselect_key] = value
-
-def get_selected_offers_for_page2(multiple_offers_key: str = "state_page2_multiple_offers", 
-                                   multiselect_key: str = "state_selected_offers_multiselect",
-                                   default=None):
-    """Gets selected offers for page_2, either from multiselect or all if not set"""
-    
-    # Zuerst prüfen, ob Multiselect-Wert vorhanden ist
-    multiselect_value = get_multiselect_value(multiselect_key)
-    if multiselect_value is not None and len(multiselect_value) > 0:
-        return multiselect_value
-    
-    # Fallback auf state_page2_multiple_offers
-    return st.session_state.get(multiple_offers_key, default)
-
-def store_page_3_to_page_2_filters(date_str, time_obj, offer_name, all_offer_hrefs):
-    """Stores filter information from page_3 for page_2"""
-    st.session_state['state_nav_date'] = date_str
-    st.session_state['state_nav_time'] = time_obj
-    st.session_state['state_nav_offer_name'] = offer_name
-    st.session_state['state_nav_offer_hrefs'] = all_offer_hrefs
-    st.session_state['state_page2_multiple_offers'] = all_offer_hrefs
-
-def clear_page_3_filters():
-    """Removes filters from page_3"""
-    
-    keys_to_remove = [
-        'state_nav_date',
-        'state_nav_time',
-        'state_nav_offer_name',
-        'state_nav_offer_hrefs'
-    ]
-    
-    for key in keys_to_remove:
-        if key in st.session_state:
-            del st.session_state[key]
 

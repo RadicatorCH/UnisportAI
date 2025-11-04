@@ -6,6 +6,7 @@ Enthält alle Filter in einer gemeinsamen Sidebar
 import streamlit as st
 from datetime import datetime, time
 from data.state_manager import get_filter_state, set_filter_state
+from data.user_management import save_sidebar_preferences
 
 
 def render_shared_sidebar(filter_type='main', sports_data=None, events=None):
@@ -252,6 +253,21 @@ def render_shared_sidebar(filter_type='main', sports_data=None, events=None):
         
         # === Navigation Buttons ===
         st.subheader("🔄 Navigation")
+
+        # Persist current filters as defaults for logged-in user
+        if st.button("💾 Als Standard speichern", use_container_width=True):
+            try:
+                intensities = get_filter_state('intensity', [])
+                focus = get_filter_state('focus', [])
+                settings = get_filter_state('setting', [])
+                locations = get_filter_state('location', [])
+                weekdays = get_filter_state('weekday', [])
+                if save_sidebar_preferences(intensities, focus, settings, locations, weekdays):
+                    st.success("✅ Standard-Filter gespeichert")
+                else:
+                    st.warning("⚠️ Konnte nicht speichern. Bitte einloggen?")
+            except Exception as e:
+                st.error(f"Fehler beim Speichern: {e}")
         
         if filter_type == 'main':
             if st.button("📅 Alle Termine (Wochenansicht)", use_container_width=True):
