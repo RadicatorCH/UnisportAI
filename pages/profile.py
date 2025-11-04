@@ -36,12 +36,10 @@ if not profile:
     st.stop()
 
 # Tabs for different sections
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3 = st.tabs([
     "📋 Information", 
     "⚙️ Preferences", 
-    "📅 Calendar", 
-    "🌐 Visibility", 
-    "📊 Activity"
+    "🌐 Visibility"
 ])
 
 # === TAB 1: INFORMATION ===
@@ -121,7 +119,6 @@ with tab1:
     new_bio = st.text_area(
         "Biography",
         value=current_bio,
-        max_chars=500,
         help="Tell others about yourself",
         placeholder="Share your sports interests, goals, or anything you'd like others to know...",
         label_visibility="collapsed"
@@ -224,48 +221,8 @@ with tab2:
         except Exception as e:
             st.error(f"❌ Error: {e}")
 
-# === TAB 3: CALENDAR ===
+# === TAB 3: VISIBILITY ===
 with tab3:
-    st.subheader("📅 My Calendar")
-    
-    # Registered courses
-    try:
-        user_sub = get_user_sub()
-        user_id = get_user_id_by_sub(user_sub)
-        
-        if user_id:
-            event_ids = get_user_registered_events(user_id)
-            
-            if event_ids:
-                count = len(event_ids)
-                
-                # Metrics display
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Registered Courses", count)
-                with col2:
-                    st.metric("This Week", "-")
-                with col3:
-                    st.metric("This Month", "-")
-                
-                st.divider()
-                
-                st.success(f"✅ You're registered for {count} upcoming course{'s' if count != 1 else ''}")
-                st.caption("💡 View your registrations on the Course Dates page")
-                
-                if st.button("📅 View Course Dates", use_container_width=True, type="primary"):
-                    st.switch_page("pages/details.py")
-            else:
-                st.info("📭 You haven't registered for any courses yet")
-                st.caption("Browse activities and click 'Join' to register for courses")
-                
-                if st.button("🔍 Browse Activities", use_container_width=True, type="primary"):
-                    st.switch_page("pages/overview.py")
-    except Exception as e:
-        st.error(f"Error loading registrations: {e}")
-
-# === TAB 4: VISIBILITY ===
-with tab4:
     st.subheader("🌐 Profile Visibility")
     
     st.info("🔍 Control who can see your profile and connect with you")
@@ -321,51 +278,4 @@ with tab4:
                 st.caption(f"💡 You're connected with {friend_count} athlete{'s' if friend_count != 1 else ''} and registered for {event_count} course{'s' if event_count != 1 else ''}")
     except Exception:
         pass
-
-# === TAB 5: ACTIVITY ===
-with tab5:
-    st.subheader("📊 Recent Activity")
-    
-    # Session activities
-    activities = get_user_activities()
-    
-    if activities:
-        st.caption(f"**{len(activities)}** total activities recorded")
-        
-        st.divider()
-        
-        # Display last 10 activities in clean format
-        recent = activities[-10:][::-1]  # Reverse to show newest first
-        
-        for i, activity in enumerate(recent):
-            timestamp = activity.get('timestamp', '')
-            activity_type = activity.get('activity_type', 'Unknown')
-            
-            # Format timestamp
-            if timestamp:
-                try:
-                    dt = datetime.fromisoformat(timestamp)
-                    time_str = dt.strftime('%d.%m.%Y %H:%M')
-                except:
-                    time_str = timestamp
-            else:
-                time_str = 'Unknown time'
-            
-            with st.container():
-                col1, col2 = st.columns([3, 1])
-                
-                with col1:
-                    st.markdown(f"**{activity_type}**")
-                
-                with col2:
-                    st.caption(time_str)
-                
-                if i < len(recent) - 1:
-                    st.divider()
-        
-        if len(activities) > 10:
-            st.info(f"Showing 10 most recent of {len(activities)} total activities")
-    else:
-        st.info("📭 No activity recorded yet")
-        st.caption("Your activity will appear here as you use the app")
 

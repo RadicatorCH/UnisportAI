@@ -258,3 +258,32 @@ def clear_user_id():
         del st.session_state["user_id"]
 
 
+def clear_all_user_state():
+    """Clears all user-related state - useful for logout or session cleanup"""
+    # Clear filter states
+    filter_keys = ['intensity', 'focus', 'setting', 'location', 'weekday', 'offers', 
+                   'search_text', 'date_start', 'date_end', 'start_time', 'end_time',
+                   'hide_cancelled', 'show_upcoming_only']
+    for key in filter_keys:
+        if key in st.session_state:
+            del st.session_state[key]
+    
+    # Clear navigation states
+    clear_selected_offer()
+    clear_nav_offer_hrefs()
+    clear_nav_offer_name()
+    clear_multiple_offers()
+    clear_selected_offers_multiselect()
+    clear_nav_date()
+    
+    if 'state_sports_data' in st.session_state:
+        del st.session_state['state_sports_data']
+    
+    # Clear user activity states
+    clear_user_activities()
+    clear_user_id()
+    
+    if '_prefs_loaded' in st.session_state:
+        del st.session_state['_prefs_loaded']
+
+

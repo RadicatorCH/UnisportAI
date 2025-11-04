@@ -137,16 +137,10 @@ def submit_sportangebot_rating(sportangebot_href: str, rating: int, comment: str
             st.error("Ungültige Bewertung (1-5)")
             return False
         
-        # Limit comment length
-        if comment and len(comment) > 2000:
-            st.error("Kommentar zu lang (max. 2000 Zeichen)")
-            return False
-        
         return db_submit_sport_rating(user_sub, sportangebot_href, rating, comment)
     except Exception as e:
         st.error(f"Fehler beim Speichern der Bewertung: {e}")
         return False
-
 
 def submit_trainer_rating(trainer_name: str, rating: int, comment: str = "") -> bool:
     """Speichert eine Bewertung für einen Trainer"""
@@ -158,11 +152,6 @@ def submit_trainer_rating(trainer_name: str, rating: int, comment: str = "") -> 
         # Basic validation
         if not isinstance(rating, int) or rating < 1 or rating > 5:
             st.error("Ungültige Bewertung (1-5)")
-            return False
-        
-        # Limit comment length
-        if comment and len(comment) > 2000:
-            st.error("Kommentar zu lang (max. 2000 Zeichen)")
             return False
         
         return db_submit_trainer_rating(user_sub, trainer_name, rating, comment)

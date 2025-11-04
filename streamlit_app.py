@@ -1,6 +1,6 @@
 import streamlit as st
-from data.auth import is_logged_in, show_login_page, render_user_menu, sync_user_to_supabase, check_token_expiry
-from data.supabase_client import get_supabase_client
+from data.auth import is_logged_in, show_login_page, sync_user_to_supabase, check_token_expiry
+from data.shared_sidebar import render_user_menu
 
 # Note: Secrets validation happens in auth modules when needed
 # This prevents errors on Streamlit Cloud during deployment
@@ -18,8 +18,7 @@ check_token_expiry()
 
 # Synchronisiere Benutzer mit Supabase
 try:
-    client = get_supabase_client()
-    sync_user_to_supabase(client)
+    sync_user_to_supabase()
 except Exception as e:
     st.warning(f"Fehler bei der Benutzersynchronisation: {e}")
 

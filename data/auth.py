@@ -15,6 +15,44 @@ def is_logged_in():
         return False
 
 
+def clear_user_session():
+    """Clears all user-related session state on logout"""
+    # Clear filter states
+    filter_keys = ['intensity', 'focus', 'setting', 'location', 'weekday', 'offers', 
+                   'search_text', 'date_start', 'date_end', 'start_time', 'end_time',
+                   'hide_cancelled', 'show_upcoming_only']
+    for key in filter_keys:
+        if key in st.session_state:
+            del st.session_state[key]
+    
+    # Clear navigation states
+    nav_keys = ['state_selected_offer', 'state_nav_offer_hrefs', 'state_nav_offer_name',
+                'state_page2_multiple_offers', 'state_selected_offers_multiselect',
+                'state_sports_data', 'state_nav_date']
+    for key in nav_keys:
+        if key in st.session_state:
+            del st.session_state[key]
+    
+    # Clear user activity states
+    activity_keys = ['user_activities', 'user_id', '_prefs_loaded']
+    for key in activity_keys:
+        if key in st.session_state:
+            del st.session_state[key]
+    
+    # Clear any cached data
+    if hasattr(st, 'cache_data'):
+        st.cache_data.clear()
+    if hasattr(st, 'cache_resource'):
+        st.cache_resource.clear()
+
+
+def handle_logout():
+    """Handles the logout process with proper cleanup"""
+    clear_user_session()
+    st.logout()
+    st.rerun()
+
+
 def check_auth():
     """Prüft die Authentifizierung und leitet zur Login-Seite um wenn nicht eingeloggt"""
     if not is_logged_in():
@@ -142,8 +180,7 @@ def check_token_expiry():
         if hasattr(st.user, 'expires_at') and st.user.expires_at:
             if datetime.now(timezone.utc) > st.user.expires_at:
                 st.warning("Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.")
-                st.logout()
-                st.rerun()
+                handle_logout()
     except Exception as e:
         st.error(f"Fehler beim Prüfen des Tokens: {e}")
 
@@ -151,27 +188,44 @@ def check_token_expiry():
 def render_user_menu():
     """Rendert das Benutzermenü in der Sidebar"""
     if is_logged_in():
-        st.sidebar.divider()
+        # Add spacing to push user menu to bottom
+        st.sidebar.markdown("<br>" * 3, unsafe_allow_html=True)
         
         with st.sidebar:
-            st.markdown("### 👤 User")
+            # User info section with card-like design
+            st.markdown(
+                f"""
+                <div style="
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    padding: 20px;
+                    border-radius: 12px;
+                    margin-bottom: 16px;
+                    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                ">
+                    <div style="color: white; font-size: 14px; font-weight: 600; margin-bottom: 8px;">
+                        👤 Signed in as
+                    </div>
+                    <div style="color: white; font-size: 16px; font-weight: 700; margin-bottom: 4px;">
+                        {st.user.name}
+                    </div>
+                    <div style="color: rgba(255,255,255,0.8); font-size: 13px;">
+                        {st.user.email}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
             
-            # User info in clean format
-            st.markdown(f"**{st.user.name}**")
-            st.caption(st.user.email)
+            # Action buttons with icons
+            col1, col2 = st.columns(2)
             
-            st.write("")  # Spacing
+            with col1:
+                if st.button("📝 Profile", use_container_width=True, key="profile_btn"):
+                    st.switch_page("pages/profile.py")
             
-            # Profile button
-            if st.button("📝 My Profile", use_container_width=True):
-                st.switch_page("pages/profile.py")
-            
-            st.divider()
-            
-            # Logout button
-            if st.button("🚪 Sign Out", use_container_width=True):
-                st.logout()
-                st.rerun()
+            with col2:
+                if st.button("🚪 Logout", use_container_width=True, key="logout_btn", type="secondary"):
+                    handle_logout()
 
 
 def get_user_info_dict():

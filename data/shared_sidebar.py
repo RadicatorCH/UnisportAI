@@ -10,6 +10,49 @@ from data.state_manager import (
 )
 from data.user_management import save_sidebar_preferences
 
+def render_user_menu():
+    """Renders the user menu in the sidebar"""
+    from data.auth import is_logged_in, handle_logout
+    
+    if is_logged_in():
+        # Add spacing to push user menu to bottom
+        st.sidebar.markdown("<br>" * 3, unsafe_allow_html=True)
+        
+        with st.sidebar:
+            # User info section with card-like design
+            st.markdown(
+                f"""
+                <div style="
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    padding: 20px;
+                    border-radius: 12px;
+                    margin-bottom: 16px;
+                    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                ">
+                    <div style="color: white; font-size: 14px; font-weight: 600; margin-bottom: 8px;">
+                        👤 Signed in as
+                    </div>
+                    <div style="color: white; font-size: 16px; font-weight: 700; margin-bottom: 4px;">
+                        {st.user.name}
+                    </div>
+                    <div style="color: rgba(255,255,255,0.8); font-size: 13px;">
+                        {st.user.email}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            
+            # Action buttons with icons
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("📝 Profile", use_container_width=True, key="profile_btn"):
+                    st.switch_page("pages/profile.py")
+            
+            with col2:
+                if st.button("🚪 Logout", use_container_width=True, key="logout_btn", type="secondary"):
+                    handle_logout()
 
 def render_shared_sidebar(filter_type='main', sports_data=None, events=None):
     """
@@ -22,7 +65,18 @@ def render_shared_sidebar(filter_type='main', sports_data=None, events=None):
     """
     
     with st.sidebar:
-        st.title("🔍 Filters")
+        # Clean title with icon
+        st.markdown("""
+            <div style="
+                padding: 16px 0 12px 0;
+                border-bottom: 2px solid rgba(49, 51, 63, 0.2);
+                margin-bottom: 20px;
+            ">
+                <h2 style="margin: 0; font-size: 24px; font-weight: 700;">
+                    🔍 Filters
+                </h2>
+            </div>
+        """, unsafe_allow_html=True)
         
         # Quick search at the top (always visible)
         search_text = st.text_input(
@@ -30,9 +84,11 @@ def render_shared_sidebar(filter_type='main', sports_data=None, events=None):
             value=get_filter_state('search_text', ''),
             placeholder="Search activities...",
             key="global_search_text",
-            label_visibility="collapsed"
+            help="Search by activity name, location, or trainer"
         )
         set_filter_state('search_text', search_text)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
         
         # Load sports data if needed
         if not sports_data:
@@ -65,7 +121,8 @@ def render_shared_sidebar(filter_type='main', sports_data=None, events=None):
                         "💪 Intensity",
                         options=intensities,
                         default=get_filter_state('intensity', []),
-                        key="global_intensity"
+                        key="global_intensity",
+                        help="Filter by exercise intensity level"
                     )
                     set_filter_state('intensity', selected_intensity)
                 
@@ -75,7 +132,8 @@ def render_shared_sidebar(filter_type='main', sports_data=None, events=None):
                         "🎯 Focus",
                         options=focuses,
                         default=get_filter_state('focus', []),
-                        key="global_focus"
+                        key="global_focus",
+                        help="Filter by training focus area"
                     )
                     set_filter_state('focus', selected_focus)
                 
@@ -85,13 +143,16 @@ def render_shared_sidebar(filter_type='main', sports_data=None, events=None):
                         "🏠 Setting",
                         options=settings,
                         default=get_filter_state('setting', []),
-                        key="global_setting"
+                        key="global_setting",
+                        help="Indoor or outdoor activities"
                     )
                     set_filter_state('setting', selected_setting)
                 
+                st.markdown("<br>", unsafe_allow_html=True)
+                
                 # Show upcoming only
                 show_upcoming_only = st.checkbox(
-                    "Show upcoming only",
+                    "📅 Show upcoming only",
                     value=get_filter_state('show_upcoming_only', True),
                     key="global_show_upcoming_only"
                 )
@@ -132,14 +193,14 @@ def render_shared_sidebar(filter_type='main', sports_data=None, events=None):
                     )
                     
                     if selected_offers:
-                        st.caption(f"✓ {len(selected_offers)} selected")
+                        st.success(f"✓ {len(selected_offers)} selected")
             
             # Sport filter (if not using multiple offers)
             if not has_multiple_offers():
                 with st.expander("🏃 Sport & Status", expanded=True):
                     sport_names = sorted(set([e.get('sport_name', '') for e in events if e.get('sport_name')]))
                     
-                    # Check for pre-selected sports
+                    # Check for pre-selected sports - ensure they exist in available options
                     default_sports = []
                     selected_offer = get_selected_offer()
                     if selected_offer:
@@ -147,17 +208,24 @@ def render_shared_sidebar(filter_type='main', sports_data=None, events=None):
                         if selected_name and selected_name in sport_names:
                             default_sports = [selected_name]
                     
+                    # Get stored filter state and validate against available options
+                    stored_offers = get_filter_state('offers', default_sports)
+                    # Only use stored offers that exist in current sport_names
+                    valid_default = [sport for sport in stored_offers if sport in sport_names]
+                    
                     selected_sports = st.multiselect(
                         "Sport",
                         options=sport_names,
-                        default=get_filter_state('offers', default_sports),
+                        default=valid_default,
                         key="global_sport_input"
                     )
                     set_filter_state('offers', selected_sports)
                     
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    
                     # Hide cancelled
                     hide_cancelled = st.checkbox(
-                        "Hide cancelled courses",
+                        "🚫 Hide cancelled courses",
                         value=get_filter_state('hide_cancelled', True),
                         key="global_hide_cancelled"
                     )
@@ -165,6 +233,8 @@ def render_shared_sidebar(filter_type='main', sports_data=None, events=None):
             
             # Date & Time filters
             with st.expander("📅 Date & Time", expanded=False):
+                st.markdown("**Date Range**")
+                
                 # Date range
                 nav_date = get_nav_date()
                 preset_date = None
@@ -188,7 +258,8 @@ def render_shared_sidebar(filter_type='main', sports_data=None, events=None):
                     )
                     set_filter_state('date_end', end_date)
                 
-                st.divider()
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("**Time Range**")
                 
                 # Time range
                 col1, col2 = st.columns(2)
@@ -219,12 +290,15 @@ def render_shared_sidebar(filter_type='main', sports_data=None, events=None):
                 # Location
                 locations = sorted(set([e.get('location_name', '') for e in events if e.get('location_name')]))
                 selected_locations = st.multiselect(
-                    "Location",
+                    "📍 Location",
                     options=locations,
                     default=get_filter_state('location', []),
-                    key="global_location"
+                    key="global_location",
+                    help="Filter by location/venue"
                 )
                 set_filter_state('location', selected_locations)
+                
+                st.markdown("<br>", unsafe_allow_html=True)
                 
                 # Weekdays
                 weekdays_de = {
@@ -233,20 +307,22 @@ def render_shared_sidebar(filter_type='main', sports_data=None, events=None):
                 }
                 weekdays_options = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
                 selected_weekdays = st.multiselect(
-                    "Weekday",
+                    "📆 Weekday",
                     options=weekdays_options,
                     default=get_filter_state('weekday', []),
                     format_func=lambda x: weekdays_de.get(x, x),
-                    key="global_weekday"
+                    key="global_weekday",
+                    help="Filter by day of the week"
                 )
                 set_filter_state('weekday', selected_weekdays)
         
         # === ACTIONS ===
-        st.divider()
+        st.markdown("<br>" * 2, unsafe_allow_html=True)
         
+        # Action buttons with better styling
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("💾 Save", use_container_width=True, help="Save current filters as defaults"):
+            if st.button("💾 Save", use_container_width=True, help="Save current filters as defaults", type="primary"):
                 try:
                     intensities = get_filter_state('intensity', [])
                     focus = get_filter_state('focus', [])
@@ -254,7 +330,7 @@ def render_shared_sidebar(filter_type='main', sports_data=None, events=None):
                     locations = get_filter_state('location', [])
                     weekdays = get_filter_state('weekday', [])
                     if save_sidebar_preferences(intensities, focus, settings, locations, weekdays):
-                        st.success("✅ Saved")
+                        st.success("✅ Saved!")
                     else:
                         st.warning("⚠️ Login required")
                 except Exception as e:
@@ -264,4 +340,6 @@ def render_shared_sidebar(filter_type='main', sports_data=None, events=None):
             if filter_type == 'detail':
                 if st.button("🏠 Home", use_container_width=True):
                     st.switch_page("pages/overview.py")
+
+    render_user_menu()
 

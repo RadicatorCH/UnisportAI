@@ -231,9 +231,18 @@ def render_athletes_page():
             st.info("👋 No friends yet - start connecting with other athletes!")
             st.caption("Browse the Discover Athletes tab to send friend requests.")
         else:
-            st.caption(f"**{len(friends)}** friend{'s' if len(friends) != 1 else ''}")
-            
+            # Remove duplicates by tracking unique IDs
+            seen_ids = set()
+            unique_friends = []
             for friend in friends:
+                friend_id = friend.get('id')
+                if friend_id and friend_id not in seen_ids:
+                    seen_ids.add(friend_id)
+                    unique_friends.append(friend)
+            
+            st.caption(f"**{len(unique_friends)}** friend{'s' if len(unique_friends) != 1 else ''}")
+            
+            for friend in unique_friends:
                 with st.container():
                     col_pic, col_info = st.columns([1, 5])
                     
