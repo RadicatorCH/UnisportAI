@@ -86,7 +86,7 @@ search.fit(X_train, y_train)
 
 
 best = search.best_estimator_                   # best model from the search
-print("Best params:", search.best_params_)
+print("Best params:", search.best_params_)     
 
 # Testen
 y_pred = best.predict(X_test)
