@@ -2,7 +2,7 @@ import streamlit as st
 from datetime import datetime
 from data.supabase_client import get_offers_with_stats, count_upcoming_events_per_offer, get_trainers_for_all_offers, get_events_for_offer, get_events_by_offer_mapping
 from data.filters import filter_offers, filter_offers_by_events, filter_events
-from data.state_manager import get_filter_state, set_filter_state, set_sports_data, set_selected_offer
+from data.state_manager import get_filter_state, set_filter_state, set_sports_data, set_selected_offer, get_sports_data
 from data.shared_sidebar import render_filters_sidebar, render_ml_recommendations_section
 from data.auth import is_logged_in
 
@@ -15,11 +15,51 @@ if not is_logged_in():
 st.title('🎯 Sports Overview')
 st.caption('Discover and book your perfect sports activities')
 
-# Get all sports data
-sports_data = get_sports_data()
+# Get all sports data from database
+from data.supabase_client import get_offers_with_stats
+offers_data = get_offers_with_stats()
 
-# Render sidebar with filters
-offers = render_filters_sidebar(sports_data=sports_data, events=None)
+# Enrich offers with event counts
+event_counts = count_upcoming_events_per_offer()
+trainers_map = get_trainers_for_all_offers()
+
+for offer in offers_data:
+    href = offer.get('href')
+    offer['future_events_count'] = event_counts.get(href, 0)
+    offer['trainers'] = trainers_map.get(href, [])
+
+# Store in state
+set_sports_data(offers_data)
+
+# Render sidebar with filters (doesn't return anything, just sets filter state)
+render_filters_sidebar(sports_data=offers_data, events=None)
+
+# Get filter values from state
+search_text = get_filter_state('search_text', '')
+selected_intensity = get_filter_state('intensity', [])
+selected_focus = get_filter_state('focus', [])
+selected_setting = get_filter_state('setting', [])
+show_upcoming_only = get_filter_state('show_upcoming_only', True)
+
+# Get additional filter state for event filtering
+selected_offers_filter = get_filter_state('offers', [])
+selected_weekdays = get_filter_state('weekday', [])
+date_start = get_filter_state('date_start', None)
+date_end = get_filter_state('date_end', None)
+time_start_filter = get_filter_state('start_time', None)
+time_end_filter = get_filter_state('end_time', None)
+selected_locations = get_filter_state('location', [])
+hide_cancelled = get_filter_state('hide_cancelled', True)
+
+# Apply filters
+offers = filter_offers(
+    offers_data,
+    show_upcoming_only=show_upcoming_only,
+    search_text=search_text,
+    intensity=selected_intensity if selected_intensity else None,
+    focus=selected_focus if selected_focus else None,
+    setting=selected_setting if selected_setting else None
+)
 
 # Main content area
 st.title("🎯 Sports Overview")
@@ -112,8 +152,8 @@ if offers:
                             and not e.get('canceled'))
                     ]
                     
-                    # Apply detail filters if active
-                    if has_detail_filters:
+                    # Apply detail filters if any are set
+                    if selected_offers_filter or selected_weekdays or date_start or date_end or time_start_filter or time_end_filter or selected_locations:
                         upcoming_events = filter_events(
                             upcoming_events,
                             sport_filter=selected_offers_filter or None,
@@ -169,11 +209,11 @@ else:
 st.markdown("---")
 st.subheader("✨ You Might Also Like")
 render_ml_recommendations_section(
-    sports_data=sports_data,
+    sports_data=offers_data,
     current_filter_results=offers  # Exclude already shown sports
 )
 
 # Empty state footer
-if len(filtered_offers) == 0:
+if len(offers) == 0:
     st.info("💡 **Tip:** Try clearing some filters to see more activities")
 
