@@ -53,8 +53,8 @@ def get_sport_recommendations(user_preferences: dict, top_n: int = 10):
         feature_order = [
             'balance', 'flexibility', 'coordination', 'relaxation', 
             'strength', 'endurance', 'longevity', 'intensity',
-            'setting_gruppe_team', 'setting_gruppe_fun', 'setting_gruppe_duo',
-            'setting_gruppe_solo', 'setting_gruppe_competitive'
+            'setting_team', 'setting_fun', 'setting_duo',
+            'setting_solo', 'setting_competitive'
         ]
         
         # Create DataFrame with correct feature order
@@ -87,8 +87,8 @@ def validate_user_preferences(preferences: dict) -> bool:
     required_features = [
         'balance', 'flexibility', 'coordination', 'relaxation', 
         'strength', 'endurance', 'longevity', 'intensity',
-        'setting_gruppe_team', 'setting_gruppe_fun', 'setting_gruppe_duo',
-        'setting_gruppe_solo', 'setting_gruppe_competitive'
+        'setting_team', 'setting_fun', 'setting_duo',
+        'setting_solo', 'setting_competitive'
     ]
     
     for feature in required_features:
@@ -136,12 +136,12 @@ def get_recommendations_from_sidebar():
         # Intensity (based on intensity filter)
         'intensity': 0.8 if any('high' in str(i).lower() or 'hoch' in str(i).lower() for i in intensity) else (0.5 if any('medium' in str(i).lower() or 'mittel' in str(i).lower() for i in intensity) else 0.2),
         
-        # Settings with CORRECT names (setting_gruppe_*)
-        'setting_gruppe_team': 1.0 if any('team' in str(s).lower() for s in setting) else 0.0,
-        'setting_gruppe_fun': 0.5,  # Default value
-        'setting_gruppe_duo': 0.0,  # Not in current filters
-        'setting_gruppe_solo': 1.0 if any('solo' in str(s).lower() for s in setting) else 0.0,
-        'setting_gruppe_competitive': 1.0 if any('competitive' in str(s).lower() or 'wettkampf' in str(s).lower() for s in setting) else 0.5,
+        # Settings (NO _gruppe prefix!)
+        'setting_team': 1.0 if any('team' in str(s).lower() for s in setting) else 0.0,
+        'setting_fun': 0.5,  # Default value
+        'setting_duo': 0.0,  # Not in current filters
+        'setting_solo': 1.0 if any('solo' in str(s).lower() for s in setting) else 0.0,
+        'setting_competitive': 1.0 if any('competitive' in str(s).lower() or 'wettkampf' in str(s).lower() for s in setting) else 0.5,
     }
     
     # DEBUG: Show ML input
