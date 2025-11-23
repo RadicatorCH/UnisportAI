@@ -305,7 +305,7 @@ for idx, event in enumerate(filtered_events):
                             st.error("❌ Failed to join event. Please try again.")
 
 # Rating section (only for single activity view)
-if st.user.is_logged_in and has_selected_offer() and not showing_multiple_offers:
+if is_logged_in() and has_selected_offer() and not showing_multiple_offers:
     # Collect trainers
     all_trainers = set()
     for event in filtered_events:
