@@ -42,7 +42,7 @@ VERCEL_AUTOMATION_BYPASS_SECRET
 Thumbs.db
 
 # ML Models
-*.joblib
+# *.joblib - COMMENTED OUT: We need to commit ml_model.joblib for Streamlit Cloud
 *.pkl
 
 # Data files (if they contain sensitive information)
