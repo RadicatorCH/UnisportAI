@@ -513,11 +513,23 @@ def render_ml_recommendations_section(sports_data=None, current_filter_results=N
                 if item.get(tag, 0) == 1 and tag not in selected_focus:
                     additional_tags.append(f"🎯 {tag.capitalize()}")
             
-            # Show intensity if different from selected
-            intensity = item.get('intensity', '') or ''
-            if intensity and isinstance(intensity, str):
-                if not selected_intensity or intensity not in [i.lower() for i in selected_intensity]:
-                    additional_tags.append(f"⚡ {intensity.capitalize()} Intensity")
+            # Show intensity if different from selected (handle both numeric and string values)
+            intensity = item.get('intensity')
+            if intensity is not None:
+                # Convert numeric intensity to string
+                if isinstance(intensity, (int, float)):
+                    if intensity <= 0.4:
+                        intensity_str = "low"
+                    elif intensity <= 0.7:
+                        intensity_str = "moderate"
+                    else:
+                        intensity_str = "high"
+                else:
+                    intensity_str = str(intensity).lower()
+                
+                # Check if this intensity is different from selected
+                if not selected_intensity or intensity_str not in [i.lower() for i in selected_intensity]:
+                    additional_tags.append(f"⚡ {intensity_str.capitalize()} Intensity")
             
             # Show NON-selected setting tags that this sport has
             setting_tags = ['setting_team', 'setting_fun', 'setting_duo', 'setting_solo', 'setting_competitive']
@@ -673,11 +685,23 @@ def render_ml_recommendations_section(sports_data=None, current_filter_results=N
                         if item.get(tag, 0) == 1 and tag not in selected_focus:
                             additional_tags_display.append(f"`➕ {tag.capitalize()}`")
                     
-                    # Show intensity if different from selected
-                    intensity = item.get('intensity', '') or ''
-                    if intensity and isinstance(intensity, str):
-                        if not selected_intensity or intensity not in [i.lower() for i in selected_intensity]:
-                            additional_tags_display.append(f"`➕ {intensity.capitalize()}`")
+                    # Show intensity if different from selected (handle both numeric and string values)
+                    intensity = item.get('intensity')
+                    if intensity is not None:
+                        # Convert numeric intensity to string
+                        if isinstance(intensity, (int, float)):
+                            if intensity <= 0.4:
+                                intensity_str = "low"
+                            elif intensity <= 0.7:
+                                intensity_str = "moderate"
+                            else:
+                                intensity_str = "high"
+                        else:
+                            intensity_str = str(intensity).lower()
+                        
+                        # Check if this intensity is different from selected
+                        if not selected_intensity or intensity_str not in [i.lower() for i in selected_intensity]:
+                            additional_tags_display.append(f"`➕ {intensity_str.capitalize()}`")
                     
                     # Show NON-selected setting tags that this sport has
                     setting_tags = ['setting_team', 'setting_fun', 'setting_duo', 'setting_solo', 'setting_competitive']
