@@ -1,294 +1,79 @@
+"""test_model.py
+----------------
+Script to test the KNN sport recommender model with different user personas.
+This script demonstrates how the trained model works with various user preference combinations.
 """
-Test script for the ML model
-Tests the saved model with various scenarios and provides detailed evaluation metrics
-"""
 
-import pandas as pd
-import numpy as np
-import joblib
-from sklearn.metrics import (
-    accuracy_score, 
-    classification_report, 
-    confusion_matrix,
-    f1_score,
-    precision_score,
-    recall_score
-)
-import os
+from ml_knn_recommender import KNNSportRecommender
 
-# Model path
-MODEL_PATH = 'ml_model.joblib'
-
-# Feature columns (must match training)
-FEATURED_COLUMNS = [
-    'endurance', 
-    'relaxation',
-    'intensity',
-    'setting_gruppe_fun', 
-    'setting_gruppe_competitive',
-    'setting_gruppe_teamsport',
-    'setting_ort_indoor',
-    'setting_ort_outdoor',
-    'standort_campus_off_campus',
-    'standort_campus_on_campus'
-]
-
-
-def load_model():
-    """Load the trained model"""
-    if not os.path.exists(MODEL_PATH):
-        print(f"❌ Model file not found: {MODEL_PATH}")
-        return None
+def test_model():
+    """Test the trained KNN recommender with sample user personas"""
+    print("\n" + "="*60)
+    print("KNN SPORT RECOMMENDER - MODEL TESTING")
+    print("="*60 + "\n")
     
-    try:
-        model = joblib.load(MODEL_PATH)
-        print(f"✅ Model loaded successfully from {MODEL_PATH}")
-        return model
-    except Exception as e:
-        print(f"❌ Error loading model: {e}")
-        return None
-
-
-def create_test_samples():
-    """Create synthetic test samples for different sport types"""
-    test_samples = []
+    # Create and train recommender (or load from saved model)
+    recommender = KNNSportRecommender(n_neighbors=10)  # Create a new recommender that finds 10 similar sports
+    recommender.load_and_train()  # Load data from database and train the model
     
-    # Sample 1: High endurance outdoor running
-    test_samples.append({
-        'name': 'Outdoor Running',
-        'features': {
-            'endurance': 0.9,
-            'relaxation': 0.2,
-            'intensity': 0.8,
-            'setting_gruppe_fun': 0.0,
-            'setting_gruppe_competitive': 0.5,
-            'setting_gruppe_teamsport': 0.0,
-            'setting_ort_indoor': 0.0,
-            'setting_ort_outdoor': 1.0,
-            'standort_campus_off_campus': 0.5,
-            'standort_campus_on_campus': 0.5
-        }
-    })
+    print("\n" + "="*60)
+    print("TESTING RECOMMENDATIONS")
+    print("="*60 + "\n")
     
-    # Sample 2: Relaxation yoga indoor
-    test_samples.append({
-        'name': 'Yoga',
-        'features': {
-            'endurance': 0.3,
-            'relaxation': 0.9,
-            'intensity': 0.3,
-            'setting_gruppe_fun': 0.5,
-            'setting_gruppe_competitive': 0.0,
-            'setting_gruppe_teamsport': 0.0,
-            'setting_ort_indoor': 1.0,
-            'setting_ort_outdoor': 0.0,
-            'standort_campus_off_campus': 0.0,
-            'standort_campus_on_campus': 1.0
-        }
-    })
+    # Test case 1: High intensity, Strength + Endurance, Solo
+    print("Test 1: High intensity, Strength + Endurance, Solo")
+    print("-" * 60)
+    user_prefs_1 = {  # Test persona: "Fitness Enthusiast" - someone seeking intense, results-focused solo training sessions
+        'balance': 0.0,  # Not interested in balance/stability training exercises
+        'flexibility': 0.0,  # Not prioritizing stretching or mobility work
+        'coordination': 0.0,  # Not seeking activities that develop hand-eye coordination or complex movement patterns
+        'relaxation': 0.0,  # Actively avoids low-key, meditative, or stress-relief focused activities
+        'strength': 1.0,  # Primary goal: maximize muscle building and power development
+        'endurance': 1.0,  # Secondary goal: improve cardiovascular fitness and stamina
+        'longevity': 0.0,  # Not focused on gentle activities for long-term joint health
+        'intensity': 1.0,  # Seeks maximum exertion, high heart rate, challenging workouts
+        'setting_team': 0.0,  # Prefers not to coordinate with groups or depend on teammates
+        'setting_fun': 0.0,  # Prioritizes results over entertainment value
+        'setting_duo': 0.0,  # Doesn't want partner-dependent activities or couples' exercises
+        'setting_solo': 1.0,  # Strongly prefers individual activities with complete schedule flexibility
+        'setting_competitive': 0.0  # Not interested in competing against others or keeping score
+    }
     
-    # Sample 3: Team sport competitive
-    test_samples.append({
-        'name': 'Football/Soccer',
-        'features': {
-            'endurance': 0.7,
-            'relaxation': 0.1,
-            'intensity': 0.7,
-            'setting_gruppe_fun': 0.5,
-            'setting_gruppe_competitive': 0.8,
-            'setting_gruppe_teamsport': 1.0,
-            'setting_ort_indoor': 0.0,
-            'setting_ort_outdoor': 1.0,
-            'standort_campus_off_campus': 0.3,
-            'standort_campus_on_campus': 0.7
-        }
-    })
+    recommendations = recommender.get_recommendations(user_prefs_1, top_n=5)  # Query trained ML model to find 5 sports most similar to this user's preferences
     
-    # Sample 4: Indoor gym training
-    test_samples.append({
-        'name': 'Gym Training',
-        'features': {
-            'endurance': 0.5,
-            'relaxation': 0.2,
-            'intensity': 0.8,
-            'setting_gruppe_fun': 0.3,
-            'setting_gruppe_competitive': 0.5,
-            'setting_gruppe_teamsport': 0.0,
-            'setting_ort_indoor': 1.0,
-            'setting_ort_outdoor': 0.0,
-            'standort_campus_off_campus': 0.0,
-            'standort_campus_on_campus': 1.0
-        }
-    })
+    print("\nTop 5 KNN Recommendations:")  # Display header for ML algorithm results
+    for i, rec in enumerate(recommendations, 1):  # Iterate through recommendations with human-friendly numbering starting from 1
+        print(f"{i}. {rec['sport']}: {rec['match_score']}% match")  # Display each recommendation with sport name and ML-calculated similarity percentage
     
-    # Sample 5: Fun group activity
-    test_samples.append({
-        'name': 'Dance Class',
-        'features': {
-            'endurance': 0.6,
-            'relaxation': 0.4,
-            'intensity': 0.6,
-            'setting_gruppe_fun': 1.0,
-            'setting_gruppe_competitive': 0.0,
-            'setting_gruppe_teamsport': 0.5,
-            'setting_ort_indoor': 1.0,
-            'setting_ort_outdoor': 0.0,
-            'standort_campus_off_campus': 0.5,
-            'standort_campus_on_campus': 0.5
-        }
-    })
+    # Test case 2: Relaxation + Flexibility, Low intensity, Duo
+    print("\n" + "="*60)
+    print("Test 2: Relaxation + Flexibility, Low intensity, Duo")
+    print("-" * 60)
+    user_prefs_2 = {  # Test persona: "Wellness Seeker" - someone prioritizing gentle movement, stress relief, and partner bonding
+        'balance': 0.0,  # Not specifically targeting balance or stability improvements
+        'flexibility': 1.0,  # Primary goal: increase range of motion, reduce stiffness, improve mobility
+        'coordination': 0.0,  # Not seeking complex movement patterns or skill development
+        'relaxation': 1.0,  # Major priority: stress reduction, mental calm, mindfulness integration
+        'strength': 0.0,  # Actively avoids muscle-building or resistance training
+        'endurance': 0.0,  # Not interested in cardiovascular conditioning or stamina building
+        'longevity': 0.0,  # Not specifically focused on long-term health maintenance
+        'intensity': 0.33,  # Prefers gentle, low-impact activities (33% = mild exertion, sustainable pace)
+        'setting_team': 0.0,  # Avoids large group dynamics or team coordination requirements
+        'setting_fun': 0.0,  # Values therapeutic benefits over entertainment aspect
+        'setting_duo': 1.0,  # Strongly prefers shared activities that strengthen relationships and provide mutual support
+        'setting_solo': 0.0,  # Dislikes exercising alone, seeks social connection and accountability
+        'setting_competitive': 0.0  # Completely avoids pressure, comparison, or performance metrics
+    }
     
-    return test_samples
-
-
-def predict_samples(model, test_samples):
-    """Make predictions on test samples"""
-    print("\n" + "="*70)
-    print("INDIVIDUAL SAMPLE PREDICTIONS")
-    print("="*70)
+    recommendations = recommender.get_recommendations(user_prefs_2, top_n=5)
     
-    for sample in test_samples:
-        # Create DataFrame with correct column order
-        X = pd.DataFrame([sample['features']])[FEATURED_COLUMNS]
-        
-        # Make prediction
-        prediction = model.predict(X)[0]
-        
-        # Get prediction probabilities if available
-        try:
-            probabilities = model.predict_proba(X)[0]
-            # Get top 3 predictions
-            top_indices = np.argsort(probabilities)[-3:][::-1]
-            top_probs = probabilities[top_indices]
-            top_classes = model.classes_[top_indices]
-            
-            print(f"\n📊 {sample['name']}")
-            print(f"   Primary Prediction: {prediction}")
-            print(f"   Top 3 predictions:")
-            for cls, prob in zip(top_classes, top_probs):
-                print(f"      - {cls}: {prob*100:.1f}%")
-        except:
-            print(f"\n📊 {sample['name']}")
-            print(f"   Prediction: {prediction}")
-
-
-def test_with_data_file():
-    """Test with actual data file if available"""
-    data_file = 'Sportangebot_ML_ready.xlsx'
+    print("\nTop 5 KNN Recommendations:")
+    for i, rec in enumerate(recommendations, 1):
+        print(f"{i}. {rec['sport']}: {rec['match_score']}% match")
     
-    if not os.path.exists(data_file):
-        print(f"\n⚠️  Data file not found: {data_file}")
-        print("   Skipping evaluation on real data.")
-        return None
-    
-    try:
-        print(f"\n{'='*70}")
-        print("EVALUATION ON ACTUAL DATA")
-        print("="*70)
-        
-        # Load data
-        data = pd.read_excel(data_file)
-        print(f"✅ Loaded data: {data.shape[0]} samples, {data.shape[1]} features")
-        
-        # Check if target column exists
-        if 'Angebot' not in data.columns:
-            print("❌ Target column 'Angebot' not found in data")
-            return None
-        
-        # Check if all feature columns exist
-        missing_cols = [col for col in FEATURED_COLUMNS if col not in data.columns]
-        if missing_cols:
-            print(f"❌ Missing feature columns: {missing_cols}")
-            return None
-        
-        # Prepare data
-        X = data[FEATURED_COLUMNS].copy()
-        y = data['Angebot'].copy()
-        
-        # Load model
-        model = load_model()
-        if model is None:
-            return None
-        
-        # Make predictions
-        y_pred = model.predict(X)
-        
-        # Calculate metrics
-        accuracy = accuracy_score(y, y_pred)
-        
-        print(f"\n📈 Overall Accuracy: {accuracy*100:.2f}%")
-        
-        # Try to calculate additional metrics
-        try:
-            f1 = f1_score(y, y_pred, average='weighted')
-            precision = precision_score(y, y_pred, average='weighted', zero_division=0)
-            recall = recall_score(y, y_pred, average='weighted', zero_division=0)
-            
-            print(f"   F1 Score (weighted): {f1*100:.2f}%")
-            print(f"   Precision (weighted): {precision*100:.2f}%")
-            print(f"   Recall (weighted): {recall*100:.2f}%")
-        except:
-            pass
-        
-        # Classification report
-        print(f"\n📋 Detailed Classification Report:")
-        print("-" * 70)
-        report = classification_report(y, y_pred, zero_division=0)
-        print(report)
-        
-        # Show some example predictions vs actual
-        print(f"\n🔍 Sample Predictions vs Actual (first 10):")
-        print("-" * 70)
-        for i in range(min(10, len(y))):
-            match = "✓" if y.iloc[i] == y_pred[i] else "✗"
-            print(f"   {match} Actual: {y.iloc[i]:30s} | Predicted: {y_pred[i]}")
-        
-        return {
-            'accuracy': accuracy,
-            'predictions': y_pred,
-            'actual': y
-        }
-        
-    except Exception as e:
-        print(f"❌ Error testing with data file: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
-
-
-def main():
-    """Main test function"""
-    print("="*70)
-    print("ML MODEL TESTING")
-    print("="*70)
-    
-    # Load model
-    model = load_model()
-    if model is None:
-        return
-    
-    # Display model info
-    print(f"\n📦 Model Type: {type(model).__name__}")
-    try:
-        if hasattr(model, 'named_steps'):
-            print(f"   Pipeline Steps: {list(model.named_steps.keys())}")
-        if hasattr(model, 'classes_'):
-            print(f"   Number of Classes: {len(model.classes_)}")
-            print(f"   Classes: {list(model.classes_)[:10]}...")  # Show first 10
-    except:
-        pass
-    
-    # Test with synthetic samples
-    test_samples = create_test_samples()
-    predict_samples(model, test_samples)
-    
-    # Test with actual data if available
-    test_with_data_file()
-    
-    print("\n" + "="*70)
-    print("TESTING COMPLETE")
-    print("="*70)
-
+    print("\n" + "="*60)
+    print("✅ Model testing completed!")
+    print("="*60 + "\n")
 
 if __name__ == "__main__":
-    main()
+    test_model()
