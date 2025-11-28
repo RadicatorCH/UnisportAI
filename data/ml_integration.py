@@ -21,7 +21,7 @@ FEATURE_COLUMNS = [
 MODEL_PATH = Path(__file__).resolve().parents[1] / "machine" / "knn_recommender.joblib"
 
 
-@st.cache_resource
+@st.cache_resource(ttl=300)  # Cache for 5 minutes
 def load_knn_model():
     """Load the trained KNN model (cached for performance)"""
     if not MODEL_PATH.exists():
