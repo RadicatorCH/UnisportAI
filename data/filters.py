@@ -88,6 +88,17 @@ def filter_offers(offers, show_upcoming_only=True, search_text="", intensity=Non
     """
     filtered = offers
     
+    # First filter out offers without any meaningful features/tags (like Schliessfachvermietung)
+    filtered = []
+    for offer in offers:
+        has_focus = offer.get('focus') and len([f for f in offer.get('focus', []) if f and f.strip()])
+        has_setting = offer.get('setting') and len([s for s in offer.get('setting', []) if s and s.strip()])
+        has_intensity = offer.get('intensity') and offer.get('intensity').strip()
+        
+        # Include offer only if it has at least one meaningful tag/feature
+        if has_focus or has_setting or has_intensity:
+            filtered.append(offer)
+    
     if show_upcoming_only:
         # Filter offers that have upcoming events
         filtered = [offer for offer in filtered if offer.get('future_events_count', 0) > 0]

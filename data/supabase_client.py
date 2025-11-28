@@ -59,11 +59,26 @@ def _convert_event_fields(event):
 
 @st.cache_data(ttl=300)  # Reduced from 600s to 300s for fresher ratings
 def get_offers_with_stats():
-    """Loads all offers with stats"""
+    """Loads all offers with stats and filters out offers without any tags/features"""
     try:
         conn = supaconn()
         result = conn.table("sportangebote_with_ratings").select("*").order("avg_rating", desc=True).order("name").execute()
-        return result.data
+        
+        # Filter out offers that have no focus, setting, or intensity (like Schliessfachvermietung)
+        filtered_offers = []
+        for offer in result.data:
+            has_focus = offer.get('focus') and len([f for f in offer.get('focus', []) if f and f.strip()])
+            has_setting = offer.get('setting') and len([s for s in offer.get('setting', []) if s and s.strip()])
+            has_intensity = offer.get('intensity') and offer.get('intensity').strip()
+            
+            # Include offer only if it has at least one meaningful tag/feature
+            if has_focus or has_setting or has_intensity:
+                filtered_offers.append(offer)
+            else:
+                logger.info(f"Filtering out offer without features: {offer.get('name', 'Unknown')}")
+        
+        logger.info(f"Loaded {len(filtered_offers)} offers with features (filtered out {len(result.data) - len(filtered_offers)} without features)")
+        return filtered_offers
     except Exception as e:
         logger.error(f"Error fetching offers with stats: {e}")
         st.error("Failed to load sport offers")
