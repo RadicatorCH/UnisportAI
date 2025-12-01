@@ -9,41 +9,44 @@ preferences.
 import streamlit as st
 from datetime import datetime
 from typing import Optional, Dict, Any
-from data.auth import get_user_sub
-from data.supabase_client import (
-    get_user_profile as db_get_user_profile,
-    update_user_preferences as db_update_user_preferences,
+from auth import get_user_sub
+from db import (
+    get_user_complete as db_get_user_complete,
+    update_user_settings as db_update_user_settings,
     save_filter_preferences as db_save_filter_preferences,
     get_user_favorites as db_get_user_favorites,
     update_user_favorites as db_update_user_favorites,
-    submit_sport_rating as db_submit_sport_rating,
-    submit_trainer_rating as db_submit_trainer_rating
+    submit_rating as db_submit_rating
 )
 
 
 def get_user_profile(user_sub: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Return the full user profile for the given OIDC subject.
+    
+    Now uses the unified get_user_complete view which includes social statistics.
 
     If ``user_sub`` is not supplied the function attempts to obtain the
-    currently authenticated subject via ``data.auth.get_user_sub``.
+    currently authenticated subject via ``auth.get_user_sub``.
 
     Args:
         user_sub (Optional[str]): OIDC subject identifier.
 
     Returns:
-        Optional[Dict[str, Any]]: The user profile dictionary or ``None`` if
-            the user cannot be resolved.
+        Optional[Dict[str, Any]]: The user profile dictionary (including friend_count) 
+            or ``None`` if the user cannot be resolved.
     """
     if not user_sub:
         user_sub = get_user_sub()
         if not user_sub:
             return None
     
-    return db_get_user_profile(user_sub)
+    return db_get_user_complete(user_sub)
 
 
 def update_user_preferences(preferences: Dict[str, Any]) -> bool:
     """Persist user preferences for the currently authenticated user.
+    
+    Now uses the unified update_user_settings function.
 
     Args:
         preferences (Dict[str, Any]): Preferences object to store.
@@ -55,7 +58,7 @@ def update_user_preferences(preferences: Dict[str, Any]) -> bool:
     if not user_sub:
         return False
     
-    return db_update_user_preferences(user_sub, preferences)
+    return db_update_user_settings(user_sub, preferences=preferences)
 
 
 def _map_weekdays_ui_to_codes(weekdays_en: list) -> list:
@@ -76,11 +79,11 @@ def _map_weekdays_ui_to_codes(weekdays_en: list) -> list:
 
 
 def save_sidebar_preferences(
-    intensities: list | None,
-    focus: list | None,
-    settings: list | None,
-    locations: list | None,
-    weekdays_en: list | None,
+    intensities: Optional[list],
+    focus: Optional[list],
+    settings: Optional[list],
+    locations: Optional[list],
+    weekdays_en: Optional[list],
 ) -> bool:
     """Save the current sidebar filter selections as defaults for the user.
 
@@ -145,14 +148,12 @@ def update_user_favorites(favorite_hrefs: list) -> bool:
 
 
 def log_user_activity(activity_type: str, details: Optional[Dict] = None):
-    """Append a user activity dictionary to the central state manager.
+    """Append a user activity dictionary to the session state.
 
     This lightweight activity logger records simple user events for
     potential display or analytics. It is stored in the application's
-    in-memory state via ``data.state_manager``.
+    session state.
     """
-    from data.state_manager import add_user_activity
-    
     user_sub = get_user_sub()
     if not user_sub:
         return
@@ -164,12 +165,16 @@ def log_user_activity(activity_type: str, details: Optional[Dict] = None):
         "timestamp": datetime.now().isoformat()
     }
     
-    # Use centralized state management
-    add_user_activity(activity)
+    # Store in session state
+    if 'user_activities' not in st.session_state:
+        st.session_state['user_activities'] = []
+    st.session_state['user_activities'].append(activity)
 
 
 def submit_sportangebot_rating(sportangebot_href: str, rating: int, comment: str = "") -> bool:
     """Submit or update a user's rating for a sport offer.
+    
+    Now uses the unified submit_rating function.
 
     Performs basic validation and delegates persistence to
     ``data.supabase_client``.
@@ -184,13 +189,15 @@ def submit_sportangebot_rating(sportangebot_href: str, rating: int, comment: str
             st.error("Ungültige Bewertung (1-5)")
             return False
         
-        return db_submit_sport_rating(user_sub, sportangebot_href, rating, comment)
+        return db_submit_rating(user_sub, "sport", sportangebot_href, rating, comment)
     except Exception as e:
         st.error(f"Fehler beim Speichern der Bewertung: {e}")
         return False
 
 def submit_trainer_rating(trainer_name: str, rating: int, comment: str = "") -> bool:
     """Submit or update a user's rating for a trainer.
+    
+    Now uses the unified submit_rating function.
 
     Args:
         trainer_name (str): Trainer display name.
@@ -210,7 +217,7 @@ def submit_trainer_rating(trainer_name: str, rating: int, comment: str = "") -> 
             st.error("Ungültige Bewertung (1-5)")
             return False
         
-        return db_submit_trainer_rating(user_sub, trainer_name, rating, comment)
+        return db_submit_rating(user_sub, "trainer", trainer_name, rating, comment)
     except Exception as e:
         st.error(f"Fehler beim Speichern der Bewertung: {e}")
         return False

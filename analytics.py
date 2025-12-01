@@ -1,5 +1,9 @@
 """
-Analytics and visualization functions for UnisportAI
+Analytics and visualization functions for UnisportAI.
+
+This module provides Plotly-based chart generation functions for visualizing
+sports data, ratings, and ML features. All functions return Plotly Figure
+objects that can be rendered directly in Streamlit using st.plotly_chart().
 """
 import streamlit as st
 import plotly.graph_objects as go
@@ -10,7 +14,8 @@ from typing import List, Dict, Optional
 from datetime import datetime
 from collections import defaultdict
 
-# ML Feature columns (same as in ml_knn_recommender.py)
+# ML Feature columns (must match ml/recommender.py)
+# These 13 features define the "personality" of each sport for ML comparison
 ML_FEATURE_COLUMNS = [
     'balance', 'flexibility', 'coordination', 'relaxation', 
     'strength', 'endurance', 'longevity', 'intensity',
@@ -36,9 +41,19 @@ FEATURE_LABELS = {
 }
 
 
+@st.cache_data(ttl=3600)
 def get_ml_training_data():
-    """Fetch ML training data from Supabase"""
-    from data.supabase_client import get_supabase_client
+    """Fetch ML training data from Supabase with caching.
+    
+    This loads the normalized feature vectors for all sports from the
+    ml_training_data view. Uses @st.cache_data with 1-hour TTL since
+    training data changes infrequently. Used by visualization functions
+    to create radar charts and feature analysis plots.
+    
+    Returns:
+        pd.DataFrame: Sports data with feature columns, or empty DataFrame on error
+    """
+    from db import get_supabase_client
     
     try:
         conn = get_supabase_client()
@@ -51,21 +66,25 @@ def get_ml_training_data():
 
 def create_sport_radar_chart(sport_name: str, ml_data: pd.DataFrame, comparison_sports: Optional[List[str]] = None) -> go.Figure:
     """
-    Creates an interactive radar chart showing ML features for a sport
+    Creates an interactive radar chart showing ML features for a sport.
+    
+    Radar charts are useful for visualizing multivariate data where each
+    axis represents a different feature. This allows users to see at a
+    glance what makes a sport unique (e.g. high strength, low flexibility).
     
     Args:
         sport_name: Name of the sport to visualize
         ml_data: DataFrame with ML training data
-        comparison_sports: Optional list of sports to compare
+        comparison_sports: Optional list of up to 5 sports to compare
         
     Returns:
-        Plotly Figure object
+        Plotly Figure object ready for st.plotly_chart()
     """
-    # Get the sport data
+    # Extract data for the main sport
     sport_data = ml_data[ml_data['Angebot'] == sport_name]
     
     if sport_data.empty:
-        # Return empty figure with message
+        # Return empty figure with helpful message
         fig = go.Figure()
         fig.add_annotation(
             text=f"No data found for {sport_name}",
@@ -75,10 +94,10 @@ def create_sport_radar_chart(sport_name: str, ml_data: pd.DataFrame, comparison_
         )
         return fig
     
-    # Create radar chart
+    # Create radar chart figure
     fig = go.Figure()
     
-    # Add main sport
+    # Add main sport trace (the sport being visualized)
     values = [sport_data[col].values[0] for col in ML_FEATURE_COLUMNS]
     labels = [FEATURE_LABELS[col] for col in ML_FEATURE_COLUMNS]
     
@@ -91,10 +110,10 @@ def create_sport_radar_chart(sport_name: str, ml_data: pd.DataFrame, comparison_
         fillcolor='rgba(255, 75, 75, 0.2)'
     ))
     
-    # Add comparison sports if provided
+    # Add comparison sports as additional traces (optional)
     if comparison_sports:
         colors = ['#1f77b4', '#2ca02c', '#ff7f0e', '#9467bd', '#8c564b']
-        for i, comp_sport in enumerate(comparison_sports[:5]):  # Max 5 comparisons
+        for i, comp_sport in enumerate(comparison_sports[:5]):  # Limit to 5 for readability
             comp_data = ml_data[ml_data['Angebot'] == comp_sport]
             if not comp_data.empty:
                 comp_values = [comp_data[col].values[0] for col in ML_FEATURE_COLUMNS]
@@ -107,12 +126,12 @@ def create_sport_radar_chart(sport_name: str, ml_data: pd.DataFrame, comparison_
                     fillcolor=f'rgba{tuple(list(px.colors.hex_to_rgb(colors[i % len(colors)])) + [0.1])}'
                 ))
     
-    # Update layout
+    # Configure chart appearance
     fig.update_layout(
         polar=dict(
             radialaxis=dict(
                 visible=True,
-                range=[0, 1],
+                range=[0, 1],  # All features normalized to 0-1 scale
                 tickvals=[0, 0.25, 0.5, 0.75, 1.0],
                 ticktext=['0%', '25%', '50%', '75%', '100%']
             )
@@ -250,7 +269,11 @@ def create_top_rated_sports_chart(offers_data: List[Dict], top_n: int = 10) -> g
 
 def create_feature_importance_chart(ml_data: pd.DataFrame) -> go.Figure:
     """
-    Creates a bar chart showing feature variance across all sports
+    Creates a bar chart showing feature variance across all sports.
+    
+    High variance features are more "discriminative" - they help distinguish
+    between different sports. Low variance features are similar across all
+    sports and less useful for recommendations.
     
     Args:
         ml_data: DataFrame with ML training data
@@ -269,12 +292,13 @@ def create_feature_importance_chart(ml_data: pd.DataFrame) -> go.Figure:
         return fig
     
     # Calculate variance for each feature
+    # Variance measures how much a feature differs across sports
     variances = {}
     for col in ML_FEATURE_COLUMNS:
         if col in ml_data.columns:
             variances[FEATURE_LABELS[col]] = ml_data[col].var()
     
-    # Sort by variance
+    # Sort features by variance (most discriminative first)
     sorted_features = sorted(variances.items(), key=lambda x: x[1], reverse=True)
     
     # Create bar chart

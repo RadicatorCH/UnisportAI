@@ -5,7 +5,8 @@ This script handles the training pipeline: load data from database,
 train the model, and save it to disk for production use.
 """
 
-from ml_knn_recommender import KNNSportRecommender
+from ml.recommender import KNNSportRecommender
+from db import get_ml_training_data_cli
 
 def train_and_save_model():
     """Train the KNN recommender and save it for production use"""
@@ -13,13 +14,18 @@ def train_and_save_model():
     print("KNN SPORT RECOMMENDER - MODEL TRAINING")
     print("="*60 + "\n")
     
+    # Load training data from database via client layer
+    print("Loading training data from database...")
+    training_data = get_ml_training_data_cli()
+    
     # Create and train recommender
     recommender = KNNSportRecommender(n_neighbors=10)  # Create a new recommender that finds 10 similar sports
-    recommender.load_and_train()  # Load data from database and train the model
+    recommender.load_and_train(training_data)  # Train model with loaded data
     
     # Save the model (prepare for production deployment)
     print("\n" + "="*60)  # Print visual separator to distinguish model saving section
-    recommender.save_model("knn_recommender.joblib")  # Persist complete trained model bundle to disk for instant loading in production Streamlit app
+    from pathlib import Path
+    recommender.save_model(str(Path("ml/models/knn_recommender.joblib")))  # Persist complete trained model bundle to disk for instant loading in production Streamlit app
     print("✅ KNN ML Model ready for production!")  # Confirm successful model training and saving - ready for integration with web application
     print("="*60 + "\n")  # Print closing visual separator for clean console output
 

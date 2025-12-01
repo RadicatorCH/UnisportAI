@@ -5,12 +5,12 @@ offers and trainers, read existing user ratings and submit updates via
 the user management layer.
 """
 import streamlit as st
-from data.user_management import (
+from user import (
     submit_sportangebot_rating, 
     submit_trainer_rating
 )
-from data.auth import get_user_sub
-from data.supabase_client import (
+from auth import get_user_sub
+from db import (
     get_user_sport_rating,
     get_user_trainer_rating,
     get_average_rating_for_offer,
@@ -26,7 +26,7 @@ def render_sportangebot_rating_widget(offer_href: str):
     Args:
         offer_href (str): Database identifier for the offer.
     """
-    from data.auth import is_logged_in
+    from auth import is_logged_in
     if not is_logged_in():
         return None
     
@@ -68,7 +68,7 @@ def render_trainer_rating_widget(trainer_name: str):
     Args:
         trainer_name (str): Trainer display name used as the identifier.
     """
-    from data.auth import is_logged_in
+    from auth import is_logged_in
     if not is_logged_in():
         return None
     

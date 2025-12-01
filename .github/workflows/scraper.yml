@@ -1,78 +1,101 @@
+## Workflow name as shown in the GitHub Actions overview
 name: Run Webscraper Scripts
 
+## Defines when the workflow is triggered
 on:
-  # Run daily at 6:00 AM UTC (7:00 AM CET / 8:00 AM CEST)
+  # Scheduled run: executes every day at 6:00 AM UTC (7:00 CET / 8:00 CEST)
   schedule:
+    # `cron` format: minute hour day_of_month month day_of_week
     - cron: '0 6 * * *'
 
-  # Allow manual triggering from GitHub UI
+  # Allows manually starting the workflow from the GitHub UI (button "Run workflow")
   workflow_dispatch:
 
+## The actual jobs of the workflow start here
 jobs:
+  # Logical name of the job
   scrape:
+    # Defines which virtual machine (runner) the job uses
     runs-on: ubuntu-latest
 
+    # Individual steps that are executed sequentially
     steps:
+      # 1) Load repository code from GitHub into the runner
       - name: Checkout repository
+        # Official GitHub Action that checks out the repository code
         uses: actions/checkout@v4
 
+      # 2) Helper step for debugging: prints directory structure and important files
       - name: Debug workspace layout
+        # `run: |` means: everything below is a multi-line shell script (bash)
         run: |
+          # Show current working directory
           echo "PWD=$(pwd)"
+          # Try to print the Git root directory (if available)
           echo "Git root:" && git rev-parse --show-toplevel || true
+          # List all files in the current top-level directory
           echo "Tree (top-level):" && ls -la || true
+          # Check whether a requirements.txt exists and show it if present
           echo "Find requirements.txt:" && ls -la requirements.txt || echo "requirements.txt not found in root" || true
+          # Check whether the .scraper folder exists and list its contents
           echo "List .scraper:" && ls -la .scraper || echo ".scraper not found" || true
 
+      # 3) Set up Python environment
       - name: Set up Python
+        # Uses the official action to install a specific Python version
         uses: actions/setup-python@v5
         with:
+          # Python version to use
           python-version: '3.11'
+          # Enable caching for pip dependencies to speed up builds
           cache: 'pip'
+          # Defines which requirements files are used for the cache key
           cache-dependency-path: '**/requirements.txt'
 
+      # 4) Install Python dependencies
       - name: Install dependencies
         run: |
+          # If a requirements.txt exists, install all packages from there
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           else
-            echo "requirements.txt fehlt – installiere Minimal-Dependencies"
+            # Fallback: install a minimal set of dependencies if no requirements.txt is present
+            echo "requirements.txt missing – installing minimal dependencies"
             pip install requests beautifulsoup4 lxml python-dateutil supabase streamlit icalendar python-dotenv urllib3
           fi
 
+      # 5) First script: extract locations from HTML
       - name: Run extract_locations_from_html.py
+        # Pass secrets as environment variables to the script
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
+          # Run the Python script that reads location data from HTML files
           python .scraper/extract_locations_from_html.py
 
+      # 6) Second script: scrape sports offers and integrate with Supabase / email / Loops
       - name: Run scrape_sportangebote.py
+        # Additional secrets required by the script as environment variables
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
           LOOPS_API_KEY: ${{ secrets.LOOPS_API_KEY }}
         run: |
+          # Run the main scraping script
           python .scraper/scrape_sportangebote.py
 
-      - name: Show generated missing files
-        if: always()
-        run: |
-          echo "Listing .scraper contents:" && ls -la .scraper || true
-          echo "Preview missing_overrides.json:" && cat .scraper/missing_overrides.json || true
-
-      - name: Upload missing_overrides.json artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: missing_overrides_json
-          path: .scraper/missing_overrides.json
-          if-no-files-found: warn
-
+      # 7) Final script: update cancellations in the data
       - name: Run update_cancellations.py
         env:
+          # Use the same Supabase URL/Key secrets as in the other steps
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
+          # Run the script that updates cancellations
           python .scraper/update_cancellations.py
+
+# Note on the use of AI tools in the development of this workflow:
+# parts of this configuration were created with the assistance of AI-based tools
+# (e.g. Cursor and GitHub Copilot) and subsequently reviewed and validated.

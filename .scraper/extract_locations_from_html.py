@@ -112,7 +112,7 @@ def parse_location_sports(html_content: str) -> Dict[str, List[str]]:
     Extract mapping from location name to list of sports using the 'bs_flmenu' menu.
     Returns dict: name -> [sports]
     On the page, there is also a menu where the sports are listed under each location.
-    We go through this list and build a dictionary: location → [sports].
+    We go through this list and build a dictionary: location -> [sports].
     """
 
     mapping: Dict[str, List[str]] = {}
@@ -124,7 +124,7 @@ def parse_location_sports(html_content: str) -> Dict[str, List[str]]:
         name_el = li.select_one("span.bs_spname")
         if not name_el:
             continue
-        # Decode HTML entities (&#228; → ä, etc.)
+        # Decode HTML entities (&#228; -> ä, etc.)
         loc_name = html.unescape(name_el.get_text(strip=True))
         sports: List[str] = []
         for sub in li.select("ul > li > a"):
@@ -153,7 +153,7 @@ def parse_location_links(html_content: str, base_url: Optional[str] = None) -> D
         name_el = li.select_one("span.bs_spname")
         if not name_el:
             continue
-        # Decode HTML entities (&#228; → ä, etc.)
+        # Decode HTML entities (&#228; -> ä, etc.)
         loc_name = html.unescape(name_el.get_text(strip=True))
         top_a = li.select_one("a[href]")
         href_rel = top_a.get("href") if top_a else None
@@ -228,6 +228,10 @@ def main() -> None:
         seen_names.add(name)
         
         # Try exact match first, then fuzzy match
+        # Concept: Merging data sources
+        # We have data from the map (markers) and from the menu (links).
+        # We try to match them by name. If the name is slightly different,
+        # we use "fuzzy matching" (approximate string matching) to find the partner.
         link_data = loc_links.get(name, {})
         if link_data:
             exact_matches += 1
@@ -236,7 +240,7 @@ def main() -> None:
             fuzzy_match = fuzzy_match_name(name, list(loc_links.keys()))
             if fuzzy_match:
                 fuzzy_matches.append((name, fuzzy_match))
-                print(f"⚠️  Fuzzy match: '{name}' → '{fuzzy_match}'")
+                print(f"⚠️  Fuzzy match: '{name}' -> '{fuzzy_match}'")
                 link_data = loc_links.get(fuzzy_match, {})
         
         merged.append({
@@ -266,7 +270,7 @@ def main() -> None:
     print(f"🤔 Fuzzy matches: {len(fuzzy_matches)}")
     if fuzzy_matches:
         for orig, matched in fuzzy_matches:
-            print(f"   '{orig}' → '{matched}'")
+            print(f"   '{orig}' -> '{matched}'")
     print(f"📍 Locations only in markers: {len(markers)}")
     print(f"📍 Locations only in menu: {len(menu_only)}")
     if menu_only:

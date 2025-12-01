@@ -1,4 +1,3 @@
-
 """Update cancellations script
 
 This script scrapes a public Unisport webpage for announcements of cancelled
@@ -30,9 +29,14 @@ from dotenv import load_dotenv
 # Mini tutorial:
 # - Step 1: Load the cancellations page and extract the text (parse_cancellations)
 # - Step 2: Convert the date to YYYY-MM-DD, compute the start time as an HHMM number
-# - Step 3: Load courses from the DB and build a name→course number mapping
+# - Step 3: Load courses from the DB and build a name->course number mapping
 # - Step 4: Fetch dates on the matching day and compare times
 # - Step 5: Upsert matches as canceled=true (no duplicates)
+#
+# concept: One-way Cancellation
+# We only set canceled=True if we find a match. We never set canceled=False here.
+# This is because a cancellation notice might disappear from the website after the date passed,
+# but we want to keep the record in our database that it was canceled.
 
 
 def fetch_html(url: str) -> str:
@@ -119,19 +123,19 @@ def main() -> None:
     supabase_url = os.environ.get("SUPABASE_URL")
     supabase_key = os.environ.get("SUPABASE_KEY")
     if not supabase_url or not supabase_key:
-        print("Bitte SUPABASE_URL und SUPABASE_KEY als ENV setzen.")
+        print("Please set SUPABASE_URL and SUPABASE_KEY as environment variables.")
         return
     supabase = create_client(supabase_url, supabase_key)
 
     cancellations = parse_cancellations()  # list of {offer_name, datum, start_hhmm}
     if not cancellations:
-        print("Keine Ausfälle gefunden oder Seite nicht erreichbar.")
+        print("No cancellations found or page not reachable.")
         return
 
     # Mapping course name(lower) -> [kursnr]
-    # We fetch offers and courses in bulk from the DB to build offer_name → kursnr
+    # We fetch offers and courses in bulk from the DB to build offer_name -> kursnr
     # offer_name is now in sportangebote, linked via offer_href
-    resp = supabase.table("sportkurse").select("kursnr, offer_href").execute()  # Kurse laden
+    resp = supabase.table("sportkurse").select("kursnr, offer_href").execute()  # Load courses
     kurs_rows = resp.data or []
     
     # Load offers for mapping offer_href -> name
@@ -189,11 +193,11 @@ def main() -> None:
                 continue
             seen.add(k)
             uniq.append(r)
-        # Schritt 5: Idempotentes Upsert pro (kursnr, start_time)
+        # Step 5: Idempotent upsert per (kursnr, start_time)
         supabase.table("kurs_termine").upsert(uniq, on_conflict="kursnr,start_time").execute()
-        print(f"Supabase: {len(uniq)} Ausfälle als canceled=true markiert (idempotent).")
+        print(f"Supabase: {len(uniq)} cancellations marked as canceled=true (idempotent).")
     else:
-        print("Keine passenden Termine zum Markieren gefunden.")
+        print("No matching sessions found to mark.")
 
     # IMPORTANT: canceled flag is only SET, never reset to false
     # The script scrape_sportangebote.py must take the canceled flag into account during upsert

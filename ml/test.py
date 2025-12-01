@@ -4,7 +4,8 @@ Script to test the KNN sport recommender model with different user personas.
 This script demonstrates how the trained model works with various user preference combinations.
 """
 
-from ml_knn_recommender import KNNSportRecommender
+from ml.recommender import KNNSportRecommender
+from db import get_ml_training_data_cli
 
 def test_model():
     """Test the trained KNN recommender with sample user personas"""
@@ -12,9 +13,13 @@ def test_model():
     print("KNN SPORT RECOMMENDER - MODEL TESTING")
     print("="*60 + "\n")
     
+    # Load training data from database via client layer
+    print("Loading training data from database...")
+    training_data = get_ml_training_data_cli()
+    
     # Create and train recommender (or load from saved model)
     recommender = KNNSportRecommender(n_neighbors=10)  # Create a new recommender that finds 10 similar sports
-    recommender.load_and_train()  # Load data from database and train the model
+    recommender.load_and_train(training_data)  # Train model with loaded data
     
     print("\n" + "="*60)
     print("TESTING RECOMMENDATIONS")

@@ -1,943 +1,442 @@
-# 🎯 UnisportAI
+## 🎯 UnisportAI
 
-Eine intelligente Streamlit-basierte Webanwendung zur Entdeckung und Verwaltung von Sportangeboten an der Universität St.Gallen (HSG).
+An intelligent Streamlit-based web application for discovering and managing university sports offers at the University of St. Gallen (HSG).
 
-## 📖 Inhaltsverzeichnis
+The app focuses on:
 
-- [Projektübersicht](#-projektübersicht)
-- [Features](#-features)
-- [Technologie-Stack](#-technologie-stack)
-- [Schnellstart](#-schnellstart)
-- [Detaillierte Installation](#-detaillierte-installation)
-- [Projektarchitektur](#-projektarchitektur)
-- [Entwickler-Guide](#-entwickler-guide)
-- [Deployment](#-deployment)
-- [Troubleshooting](#-troubleshooting)
-- [Contributing](#-contributing)
-- [Transparenzhinweis zu KI-gestützter Entwicklung](#-transparenzhinweis-zu-ki-gestützter-entwicklung)
+- **Discovery**: Find sports activities that match your intensity, focus and setting preferences.
+- **Filtering**: Powerful sidebar filters for time, location, weekday and more.
+- **Ratings**: Rate activities and trainers and see community feedback.
+- **Personalization**: Save filter defaults and favourites per user.
 
-## 🎉 Projektübersicht
+All of the content below is **fully up to date** with the current flat project layout:
 
-UnisportAI ist eine moderne Webanwendung, die es Studierenden und Mitarbeitern der Universität St.Gallen ermöglicht, Sportkurse zu entdecken, zu filtern und zu verwalten. Die App bietet eine intuitive Benutzeroberfläche mit erweiterten Filtermöglichkeiten, Bewertungssystem, persönlichem Kalender und Community-Features.
+- `streamlit_app.py`
+- `auth.py`
+- `db.py`
+- `analytics.py`
+- `rating.py`
+- `user.py`
+- `ml/` (training utilities and model artifacts)
 
-**Was macht diese App besonders?**
+---
 
-- 🔐 **Sichere Authentifizierung**: Google OAuth Integration - kein Passwort nötig
-- 📊 **Intelligente Filterung**: Finde den perfekten Kurs nach Zeit, Ort, Intensität und mehr
-- ⭐ **Community-Bewertungen**: Sieh Bewertungen von anderen Teilnehmern
-- 📅 **Kalender-Integration**: Importiere deine Kurse in Google Calendar, Outlook, etc.
-- 👥 **Soziale Features**: Finde Freunde und sehe wer noch teilnimmt
-- 📱 **Mobile-freundlich**: Funktioniert auf allen Geräten
+## 📦 Features
 
-## ✨ Features
+### 🔐 Authentication & Security
 
-### 🔐 Authentifizierung & Sicherheit
+- **Google OAuth 2.0 via Streamlit Auth**
+  - Login directly in the sidebar with `st.login("google")`
+  - No password handling inside the app
+- **User synchronisation to Supabase**
+  - On successful login, the user is written/updated in the `users` table
+  - Last login time and basic profile data are stored
+- **Session management**
+  - Session state is cleared on logout
+  - Optional token expiry check for long‑running sessions
 
-- **Google OAuth 2.0**: Sicherer Login ohne Passwort
-- **Automatische Benutzer-Synchronisation** mit Supabase
-- **Terms of Service & Privacy Policy** Acceptance
-- **GDPR-konforme** Datenverarbeitung
-- **Personalisierte Tokens** für iCal-Feeds
-- **Session Management** mit automatischer Token-Erneuerung
+### 🏋️ Sports & Course Management
 
-### 📊 Sportangebot-Management
+- **Sports overview**
+  - List of all sports offers from the `vw_offers_complete` Supabase view
+  - Aggregated stats: average rating, rating count, upcoming events
+- **Rich filter sidebar**
+  - **Activity Type**
+    - Intensity (Low / Moderate / High)
+    - Focus (Strength, Endurance, Flexibility, Longevity, …)
+    - Setting (Solo, Duo, Team, Competitive, Fun)
+  - **Course filters**
+    - Location
+    - Weekday
+    - Sport name
+    - Hide cancelled courses
+    - Date range
+    - Time range
+  - **AI Settings**
+    - Minimum match score (0–100 %)
+    - Maximum number of recommendations
+- **Course dates**
+  - Table view of upcoming course dates (from `vw_termine_full`)
+  - Cancellation status, location and trainers per event
 
-- **Übersicht aller Kurse** mit Filtermöglichkeiten
-- **Detailansicht** für einzelne Aktivitäten
-- **Wochenansicht** aller verfügbaren Termine
-- **Trainer-Informationen** mit Bewertungen
-- **Kursbilder** und visuelle Darstellung
-- **Intensitäts-Filter**: Leicht, Mittel, Intensiv
-- **Fokus-Filter**: Ausdauer, Kraft, Flexibilität, etc.
-- **Setting-Filter**: Indoor, Outdoor, Wasser, etc.
+### ⭐ Ratings & Social Layer
 
-### 📅 Kalender & Terminverwaltung
+- **Activity ratings**
+  - Users can rate each sport (1–5 stars) and leave comments
+  - Ratings are stored in `sportangebote_user_ratings`
+  - Average ratings and counts are shown in the UI and analytics views
+- **Trainer ratings**
+  - Trainers have their own rating stream (`trainer_user_ratings`)
+  - Dedicated widgets to rate and review trainers
+  - Overview of trainer ratings in the course dates tab
+- **Public profiles & social graph**
+  - Users can mark their profile as public
+  - Public athletes can be discovered in the “Athletes” tab
+  - Friendships & friend requests are managed in `user_friends` / `friend_requests`
 
-- **Wochenkalender** mit allen Terminen
-- **iCal Feed** für persönliche Kalender-Integration
-- **Erinnerungen** 15 Minuten vor Kursbeginn
-- **Anmeldungs-Tracking**: "Going" Funktion
-- **Abgesagte Kurse** automatisch ausgeblendet
-- **Multi-Termin-Auswahl** für direkte Navigation
+### 🤖 Machine Learning Recommendations
 
-### 👥 Community Features
+- **K‑Nearest Neighbours (KNN) recommender**
+  - Trained on feature vectors from `ml_training_data` view
+  - 13‑dimensional feature space covering focus, intensity and setting
+- **Model usage in the app**
+  - Pre‑trained model bundle loaded from `ml/models/knn_recommender.joblib`
+  - `streamlit_app.py` builds a preference vector from the sidebar filters
+  - ML recommendations are filtered by a minimum match score and max result count
+- **Training utilities (optional)**
+  - `ml/train.py`: CLI script to train and save the KNN model
+  - `ml/test.py`: CLI script to test the model with sample personas
 
-- **Freundesystem**: Finde Sport-Freunde
-- **Benachrichtigungen**: Sieh wer noch teilnimmt
-- **Bewertungssystem**: Bewerte Kurse und Trainer
-- **Profile-Management**: Persönliche Einstellungen
-- **Athleten-Vermittlung**: Finde Trainingspartner
+### 📊 Analytics & Visualisations
 
-### 🔧 Admin-Funktionen
+- **Rating distribution**
+  - Histogram over average ratings of sports
+- **Top rated sports**
+  - Horizontal bar chart of the best rated sports with min rating count
+- **ML feature analysis**
+  - Radar chart for sport feature profiles
+  - Feature variance chart showing which features are most discriminative
+- **Intensity & setting distribution**
+  - Pie chart of intensity levels
+  - Bar chart of settings (Solo, Duo, Team, …)
 
-- **User Management**: Benutzerübersicht und Verwaltung
-- **Bulk-Operations**: Massen-Aktionen für alle Nutzer
-- **System-Statistiken**: Überblick über Nutzung und Daten
-- **Rollen-Management**: Admin-Berechtigungen
+---
 
-## 🛠 Technologie-Stack
+## 🧱 Technology Stack
 
-Diese Anwendung nutzt moderne Web- und Cloud-Technologien:
+**Languages & runtime**
 
-| Technologie | Zweck | Version |
-|------------|------|---------|
-| **Python** | Programmiersprache | 3.9+ |
-| **Streamlit** | Web-Framework | Latest |
-| **Supabase** | Backend-as-a-Service | Cloud |
-| **Google OAuth** | Authentifizierung | OIDC |
-| **PostgreSQL** | Datenbank | (via Supabase) |
+- Python 3.9+
+- Streamlit (latest)
 
-**Hauptbibliotheken:**
-- `streamlit` - Web UI Framework
-- `st-supabase` - Supabase Connection für Streamlit
-- `python-dateutil` - Datum-Handling
-- Weitere Abhängigkeiten (siehe `requirements.txt`)
+**Backend & database**
 
-## 🚀 Schnellstart
+- Supabase (PostgreSQL)
+- `st-supabase-connection` for native Streamlit ↔ Supabase integration
 
-### Voraussetzungen
+**Machine Learning & data**
 
-Bevor du startest, stelle sicher dass du folgendes installiert hast:
+- scikit‑learn – KNN, StandardScaler
+- pandas, numpy – data wrangling & numeric operations
+- joblib – model persistence
 
-- **Python 3.9 oder höher** ([Download](https://www.python.org/downloads/))
-- **pip** (meist automatisch mit Python installiert)
-- **Git** ([Download](https://git-scm.com/downloads))
-- **Ein Google-Konto** (für OAuth)
-- **Supabase Account** (kostenlos auf [supabase.com](https://supabase.com))
+**Visualisation**
 
-> 💡 **Tipp**: Überprüfe deine Python-Version mit `python --version` im Terminal.
+- Plotly (graph_objects + express)
 
-### Schritt 1: Repository klonen
+See `requirements.txt` for the exact dependency list.
+
+---
+
+## 🚀 Getting Started
+
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/RadicatorCH/UnisportAI.git
 cd UnisportAI
 ```
 
-### Schritt 2: Abhängigkeiten installieren
-
-Erstelle zunächst eine virtuelle Umgebung (empfohlen für Python-Projekte):
+### 2. Create and activate a virtual environment
 
 ```bash
-# Erstelle virtuelle Umgebung
 python -m venv venv
 
-# Aktiviere virtuelle Umgebung
-# Windows:
-venv\Scripts\activate
-# Mac/Linux:
+# macOS / Linux
 source venv/bin/activate
 
-# Installiere Abhängigkeiten
+# Windows (PowerShell)
+venv\Scripts\Activate.ps1
+```
+
+### 3. Install dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-> 💡 **Was ist eine virtuelle Umgebung?** Sie isoliert Python-Pakete deines Projekts von anderen Projekten auf deinem Computer, um Konflikte zu vermeiden.
+### 4. Configure Supabase credentials
 
-### Schritt 3: Supabase Setup
-
-1. Gehe zu [supabase.com](https://supabase.com) und erstelle einen kostenlosen Account
-2. Erstelle ein neues Projekt
-3. Notiere dir die **Project URL** und **API Key** aus deinen Project Settings
-
-### Schritt 4: Google OAuth konfigurieren
-
-1. Gehe zu [Google Cloud Console](https://console.cloud.google.com/)
-2. Erstelle ein neues Projekt oder wähle ein bestehendes
-3. Aktiviere die **Google+ API**
-4. Erstelle OAuth 2.0 Credentials
-5. Konfiguriere Redirect URIs (siehe [Detaillierte Installation](#google-oauth-setup))
-
-### Schritt 5: Secrets konfigurieren
-
-Erstelle eine Datei `.streamlit/secrets.toml` (im Hauptverzeichnis):
+Create `.streamlit/secrets.toml` in the project root:
 
 ```toml
 [connections.supabase]
-url = "https://xxxxx.supabase.co"
-key = "dein-api-key-hier"
+url = "https://your-project-id.supabase.co"
+key = "your-anon-or-service-key"
 
 [auth]
-cookie_secret = "ein-mindestens-32-zeichen-langes-geheimnis"
+cookie_secret = "a-random-string-with-at-least-32-characters"
 
 [auth.google]
-client_id = "deine-google-client-id"
-client_secret = "dein-google-client-secret"
+client_id = "your-google-oauth-client-id"
+client_secret = "your-google-oauth-client-secret"
 server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
 ```
 
-> ⚠️ **Wichtig**: Füge `.streamlit/secrets.toml` zu `.gitignore` hinzu (bereits vorhanden), damit keine Secrets ins Repository hochgeladen werden!
+**Important:**
 
-### Schritt 6: App starten
+- Never commit `.streamlit/secrets.toml` or `.env` to version control.
+- Ensure that the Supabase project has the required tables/views (see below).
+
+### 5. Configure Google OAuth
+
+High‑level steps:
+
+1. Go to the Google Cloud Console.
+2. Create a project (e.g. `UnisportAI`).
+3. Configure the OAuth consent screen (App name, support email, scopes).
+4. Create OAuth 2.0 credentials of type **Web application**.
+5. Add these redirect URIs:
+
+   ```text
+   http://localhost:8501/oauth2callback
+   https://unisportai.streamlit.app/oauth2callback   # if you deploy on Streamlit Cloud
+   ```
+
+6. Copy client ID and client secret into `.streamlit/secrets.toml` under `[auth.google]`.
+
+### 6. Run the app
 
 ```bash
 streamlit run streamlit_app.py
 ```
 
-Die App öffnet sich automatisch in deinem Browser unter `http://localhost:8501`.
+Open `http://localhost:8501` in your browser if it does not open automatically.
+
+Log in with your Google account using the button in the sidebar.
 
 ---
 
-## 📚 Detaillierte Installation
+## 🗄 Database Schema (Supabase)
 
-### Python Basics - Für Einsteiger
+The app expects a PostgreSQL database (via Supabase) with at least the following tables/views:
 
-Wenn du Python noch nicht kennst, hier sind die Grundlagen:
+- `users` – user accounts, profile data and stored preferences
+- `sportangebote` – sports offers (base table with focus/setting/intensity features)
+- `sportkurse` – course definitions grouped by course number
+- `kurs_termine` – individual course dates (time, location, cancellation flag)
+- `unisport_locations` – physical locations with coordinates and indoor/outdoor flag
+- `sportangebote_user_ratings` – user ratings for sports
+- `trainer` – trainers with base metadata and default rating
+- `trainer_user_ratings` – user ratings for trainers
+- `user_favorites` – mapping between users and their favourite sports
+- `user_friends` – friendship graph between users
+- `friend_requests` – pending and historical friend requests
+- `etl_runs` – simple ETL bookkeeping table for scraper components
+- `ml_training_data` (view) – feature matrix for the ML recommender
+- `vw_offers_complete` (view) – enriched sports offers with ratings, event counts & trainers
+- `vw_termine_full` (view) – enriched upcoming course dates with trainer and location data
+- `vw_user_social_stats` (view) – users with aggregated social statistics (friend counts, pending requests)
 
-**Was ist Python?**
-Python ist eine benutzerfreundliche Programmiersprache, die oft für Webentwicklung, Datenanalyse und Automatisierung verwendet wird.
+---
 
-**Warum eine virtuelle Umgebung?**
-- Verhindert Konflikte zwischen verschiedenen Projekten
-- Jedes Projekt kann unterschiedliche Versionen von Bibliotheken verwenden
-- Einfache Wartung und Deployment
+## 🧭 Project Structure
 
-### Supabase Setup - Schritt für Schritt
+Current (simplified) layout:
 
-**Was ist Supabase?**
-Supabase ist eine open-source Alternative zu Firebase und bietet Datenbank, Authentifizierung, Storage und mehr in einem Service.
-
-**Warum Supabase?**
-- PostgreSQL-Datenbank (mächtig und zuverlässig)
-- Automatische API-Generierung
-- Real-time Subscriptions
-- Kostenlose Starter-Tier
-- Open-Source
-
-**Detaillierte Anleitung:**
-
-1. **Account erstellen**:
-   - Besuche [supabase.com](https://supabase.com)
-   - Klicke auf "Start your project"
-   - Melde dich mit GitHub, Google oder E-Mail an
-
-2. **Neues Projekt erstellen**:
-   - Klicke auf "New Project"
-   - Wähle eine Organisation (oder erstelle eine neue)
-   - Gib deinem Projekt einen Namen (z.B. "unisport")
-   - Wähle eine Region nahe deinem Standort
-   - Erstelle ein Master-Passwort (speichere es sicher!)
-   - Klicke auf "Create new project"
-   - Warte 2-3 Minuten bis das Projekt initialisiert ist
-
-3. **Credentials holen**:
-   - Gehe zu Project Settings → API
-   - Kopiere die **Project URL** (beginnt mit `https://`)
-   - Kopiere den **anon/public key**
-   - Diese Daten brauchst du für `.streamlit/secrets.toml`
-
-4. **Datenbank konfigurieren**:
-   - Die App nutzt verschiedene Tabellen (siehe Projektarchitektur)
-   - Diese werden automatisch über Migrations angelegt
-   - Gehe zu SQL Editor in Supabase und führe die Migrations aus
-
-**Häufige Fehler:**
-- ❌ "Connection refused": Prüfe URL auf Tippfehler
-- ❌ "Invalid API key": Hole den korrekten anon key
-- ❌ "Row Level Security Error": Aktiviere RLS Policies
-
-### Google OAuth Setup
-
-**Was ist OAuth?**
-OAuth ist ein Standard für sichere Authentifizierung ohne Passwort. Benutzer melden sich mit ihrem Google-Account an.
-
-**Warum Google Login?**
-- Keine eigenen Passwörter zu verwalten
-- Vertraute Authentifizierung
-- Fortgeschrittene Sicherheits-Features
-- Einfache Integration
-
-**Detaillierte Anleitung:**
-
-1. **Google Cloud Console Setup**:
-   ```
-   1. Gehe zu: https://console.cloud.google.com/
-   2. Klicke oben auf Projekt auswählen
-   3. Klicke auf "NEUES PROJEKT"
-   4. Gib einen Projektnamen ein (z.B. "UnisportAI")
-   5. Klicke auf "Erstellen"
-   6. Warte bis die Benachrichtigung erscheint
-   ```
-
-2. **OAuth Consent Screen konfigurieren**:
-   - Im Menü links: APIs & Services → OAuth consent screen
-   - Wähle "Internal" (für Organisation) oder "External" (öffentlich)
-   - Fülle aus:
-     - App-Name: UnisportAI
-     - User support email: deine E-Mail
-     - Developer contact: deine E-Mail
-   - Klicke auf "Save and Continue"
-   - Scope: Lasse Standard, klicke "Save and Continue"
-   - Test Users (nur für External): Füge Test-E-Mails hinzu
-
-3. **OAuth Credentials erstellen**:
-   - Im Menü links: APIs & Services → Credentials
-   - Klicke auf "+ CREATE CREDENTIALS"
-   - Wähle "OAuth client ID"
-   - Application type: "Web application"
-   - Name: UnisportAI Client
-   - **Authorized redirect URIs** hinzufügen:
-     ```
-     http://localhost:8501/oauth2callback
-     https://unisportai.streamlit.app/oauth2callback
-     ```
-   - Klicke auf "Create"
-   - **WICHTIG**: Kopiere sofort Client ID und Client Secret (nur einmal sichtbar!)
-
-4. **Redirect URI Probleme vermeiden**:
-   
-   **Problem**: Streamlit verwendet verschiedene Ports lokal
-   
-   **Lösung**: Verwende einen festen Port:
-   ```bash
-   streamlit run streamlit_app.py --server.port 8501
-   ```
-   
-   Oder füge mehrere URIs hinzu:
-   ```
-   http://localhost:8501/oauth2callback
-   http://localhost:8502/oauth2callback
-   ```
-
-5. **Secrets aktualisieren**:
-   Füge Client ID und Secret zu `.streamlit/secrets.toml` hinzu.
-
-**Häufige Fehler:**
-- ❌ "redirect_uri_mismatch": Prüfe dass URIs exakt übereinstimmen
-- ❌ "invalid_client": Prüfe Client ID und Secret
-- ❌ "This app isn't verified": Verwende Test User (External Mode)
-
-### Datenbank-Migration
-
-Die App nutzt eine PostgreSQL-Datenbank mit folgenden Haupt-Tabellen:
-
-- `users` - Benutzerdaten
-- `sportangebote_with_ratings` - Sportkurse mit Bewertungen
-- `kurs_termine` - Einzelne Kurstermine
-- `vw_termine_full` - View für Termine mit allen Daten
-- `friend_course_notifications` - Freunde-Beziehungen
-
-**Migrations ausführen:**
-
-1. Öffne Supabase Dashboard
-2. Gehe zu SQL Editor
-3. Kopiere den Inhalt von `supabase/migrations/add_ical_feed_token.sql`
-4. Führe die SQL-Statements aus
-5. Wiederhole für weitere Migrationen
-
-> 💡 **Was sind Views?** Views sind virtuelle Tabellen, die Daten aus mehreren Quellen kombinieren. Sie vereinfachen komplexe Queries.
-
-## 🏗 Projektarchitektur
-
-### Ordnerstruktur
-
-```
-Unisport/
-├── streamlit_app.py          # 🚀 Entry Point - Haupt-Application
-├── pages/                    # 📄 Streamlit Seiten
-│   ├── overview.py           # Hauptübersicht aller Kurse
-│   ├── details.py            # Detailansicht für Kurse
-│   ├── calendar.py           # Wochenansicht aller Termine
-│   ├── athletes.py           # Sportfreunde finden
-│   ├── profile.py            # Benutzerprofil
-│   └── admin.py              # Admin Panel (nur für Admins)
-├── data/                     # 💾 Backend-Logik und Datenbank-Zugriff
-│   ├── supabase_client.py    # Supabase Datenbank-Verbindung
-│   ├── auth.py               # Authentifizierungslogik
-│   ├── filters.py            # Filter-Funktionen
-│   ├── shared_sidebar.py     # Gemeinsame Sidebar
-│   ├── state_manager.py      # Session State Management
-│   ├── rating.py             # Bewertungssystem
-│   ├── security.py           # Sicherheits-Features
-│   ├── tos_acceptance.py    # Terms of Service Acceptance
-│   └── user_management.py    # Benutzerverwaltung
-├── supabase/                 # 🗄 Datenbank und Edge Functions
-│   ├── migrations/           # SQL-Migrationen
-│   └── functions/
-│       └── ical-feed/        # iCal Feed Edge Function
-│           └── index.ts
-└── docs/                     # 📚 Dokumentation
-    ├── TERMS_OF_SERVICE.md
-    └── PRIVACY_POLICY.md
+```text
+UnisportAI/
+├── streamlit_app.py    # Main Streamlit application
+├── auth.py             # Authentication helpers (Streamlit + Google OAuth)
+├── db.py               # Supabase data access layer
+├── analytics.py        # Plotly analytics & visualisations
+├── rating.py           # Rating widgets for sports & trainers
+├── user.py             # High‑level user management & preferences
+├── ml/                 # ML recommender utilities and model
+│   ├── recommender.py  # KNN recommender class (training / testing)
+│   ├── train.py        # CLI script to train and save the model
+│   ├── test.py         # CLI script to test recommendations
+│   └── models/
+│       └── knn_recommender.joblib  # Saved model bundle used by the app
+├── requirements.txt    # Python dependencies
+├── .streamlit/         # (optional) local Streamlit config & secrets
+└── .github/, .scraper/ # CI and scraping utilities (not required for basic usage)
 ```
 
-### Datenfluss
+### Module overview
 
-```
-1. Benutzer öffnet App → streamlit_app.py
-   ↓
-2. Prüfung auf Authentifizierung → auth.py
-   ↓
-3. Prüfung auf TOS Acceptance → tos_acceptance.py
-   ↓
-4. Navigation zu gewählter Seite → pages/*.py
-   ↓
-5. Laden von Daten aus Supabase → supabase_client.py
-   ↓
-6. Anwenden von Filtern → filters.py
-   ↓
-7. Darstellung in der UI → Streamlit Rendering
-```
+- **`streamlit_app.py`**
+  - Entry point of the web application
+  - Configures page layout and sidebar
+  - Calls `auth` helpers to check login and synchronise users
+  - Reads filters from session state
+  - Loads offers and events via `db` helpers
+  - Integrates ML recommender and analytics views
 
-### Namenskonvention
+- **`auth.py`**
+  - `is_logged_in()` – checks Streamlit user session
+  - `handle_logout()` – clears session state and logs out
+  - `check_token_expiry()` – optional expiry check
+  - `sync_user_to_supabase()` – creates/updates user row in Supabase
+  - Accessors like `get_user_sub()` and `get_user_email()`
 
-Die App verwendet ein konsistentes Prefix-System für Variablen:
+- **`db.py`**
+  - Creates a cached Supabase connection via `st-supabase-connection`
+  - Provides high‑level query functions:
+    - `get_offers_complete()`
+    - `get_events(offer_href: Optional[str])`
+    - `get_user_complete(user_sub)`
+    - `update_user_settings(...)`
+    - `save_filter_preferences(...)`
+    - `get_user_favorites(...)` / `update_user_favorites(...)`
+    - `get_public_users()`, `get_user_friends()`, friend request helpers
+    - Ratings helpers and ML training data loaders
 
-| Prefix | Verwendung | Beispiel |
-|--------|-----------|----------|
-| `offer_*` | Sportangebote | `offer.name`, `offer.href` |
-| `event_*` | Einzelne Termine | `event.start_time`, `event.location` |
-| `course_*` | Kurse | `course.kursnr`, `course.trainers` |
-| `trainer_*` | Trainer-Info | `trainer.name`, `trainer.rating` |
-| `location_*` | Standorte | `location.name`, `location.coords` |
-| `state_*` | Session State | `state_sports_data`, `state_filters` |
-| `filter_*` | Filter-Werte | `filter_intensity`, `filter_location` |
+- **`user.py`**
+  - Thin service layer on top of `db.py` and `auth.py`
+  - Encapsulates:
+    - Loading the current user profile
+    - Saving sidebar preferences
+    - Managing favourites
+    - Submitting ratings
+    - Lightweight in‑memory user activity log in `st.session_state`
 
-Dies erleichtert die Navigation im Code und verhindert Namenskonflikte.
+- **`rating.py`**
+  - Streamlit UI components for ratings
+  - Uses `user.submit_*_rating` and `db` rating queries
+  - Expander‑based widgets for activities and trainers
 
-### Module-Übersicht
+- **`analytics.py`**
+  - Pure visualisation/analytics module
+  - All functions take plain data structures (lists or DataFrames) and return Plotly figures
+  - Consumption happens in `streamlit_app.py`
 
-#### streamlit_app.py
-**Zweck**: Entry Point der Anwendung
+- **`ml/`**
+  - Not required for running the app if a pre‑trained model exists
+  - Useful when you want to retrain or experiment with the recommender
 
-**Aufgaben**:
-- Prüft Authentifizierung
-- Zeigt Login-Seite falls nicht eingeloggt
-- Validiert Terms of Service Acceptance
-- Regelt Navigation zwischen Seiten
-- Zeigt Admin-Page nur für Admins
+---
 
-#### data/supabase_client.py
-**Zweck**: Zentrale Datenbank-Verbindung
+## 👨‍💻 Development Guide
 
-**Funktionen**:
-- `get_offers_with_stats()` - Lädt alle Kurse mit Bewertungen
-- `get_all_events()` - Lädt alle kommenden Termine
-- `get_events_for_offer(href)` - Termine für bestimmten Kurs
-- `create_or_update_user()` - Benutzer-Synchronisation
-- Caching-Mechanismus für Performance
+### Code style
 
-**Wichtige Pattern**: 
-- Nutzt `@st.cache_data` für lokales Caching
-- TTL (Time To Live) von 300-600 Sekunden
-- Speicherefficient durch reduziere API-Calls
+- Follow **PEP 8** for Python code.
+- Use **type hints** where possible, especially in `db.py` and `user.py`.
+- Keep UI logic in `streamlit_app.py`, `rating.py` and Streamlit pages; keep `db.py` free of UI.
 
-#### data/auth.py
-**Zweck**: Authentifizierungs-Logik
+### Working with session state
 
-**Funktionen**:
-- `is_logged_in()` - Prüft Login-Status
-- `show_login_page()` - Rendert Login-UI
-- `check_token_expiry()` - Validiert Token-Gültigkeit
-- `sync_user_to_supabase()` - Synchronisiert Benutzerdaten
+The app relies heavily on `st.session_state` to store:
 
-#### data/filters.py
-**Zweck**: Filter-Funktionen
+- Filter values (intensity, focus, setting, location, weekday, …)
+- AI settings (min match score, max results)
+- Currently selected offer
+- User activities (lightweight log)
 
-**Konzept**: Stufenfiltrierung
-1. Base-Filter: Suche, Intensität, Fokus, Setting
-2. Detail-Filter: Datum, Zeit, Ort, Wochentag
-3. Event-basiert: Filtert Kurse nach Termin-Kriterien
-
-**Optimierung**: 
-- Frühzeitiges Filtern reduziert Datenmenge
-- Nested Filter für hohe Performance
-
-#### pages/overview.py
-**Zweck**: Hauptübersicht aller Sportkurse
-
-**Features**:
-- Karten-Layout für alle Kurse
-- Filter-Sidebar
-- Kommende Termine Vorschau
-- Bewertungsanzeige
-- Trainer-Info
-- Navigations-Buttons
-
-#### pages/details.py
-**Zweck**: Detailansicht eines Kurses
-
-**Features**:
-- Alle kommenden Termine
-- Multi-Select für mehrere Kurse
-- Trainer-Details mit Bewertungen
-- Standort-Information
-- Kalender-Export
-
-#### pages/calendar.py
-**Zweck**: Wochenansicht aller Termine
-
-**Features**:
-- Vollständiger Wochenkalender
-- Multi-Kurs-Auswahl
-- Filter-Integration
-- iCal Feed Generation
-- Navigation zwischen Wochen
-
-## 👨‍💻 Entwickler-Guide
-
-### Code-Style
-
-**Python Naming Conventions**:
-```python
-# Funktionen: snake_case
-def get_user_data():
-    pass
-
-# Variablen: snake_case
-user_name = "John"
-
-# Konstanten: UPPER_CASE
-MAX_LOGIN_ATTEMPTS = 5
-
-# Klassen: PascalCase
-class UserManager:
-    pass
-```
-
-**Streamlit Best Practices**:
-
-1. **Session State für Persistenz**:
-```python
-# Initialisiere im Session State
-if 'counter' not in st.session_state:
-    st.session_state['counter'] = 0
-
-# Ändere Werte
-st.session_state['counter'] += 1
-```
-
-2. **Caching für Performance**:
-```python
-@st.cache_data(ttl=300)  # Cache für 5 Minuten
-def expensive_operation():
-    # Wird nur einmal alle 5 Minuten ausgeführt
-    pass
-```
-
-3. **Navigation mit switch_page**:
-```python
-if st.button("Go to Details"):
-    st.switch_page("pages/details.py")
-```
-
-### Neue Features hinzufügen
-
-**1. Neue Seite erstellen**:
-
-Erstelle `pages/new_page.py`:
-```python
-import streamlit as st
-from data.auth import is_logged_in
-
-if not is_logged_in():
-    st.error("❌ Bitte melden Sie sich an.")
-    st.stop()
-
-st.title("Meine Neue Seite")
-st.write("Willkommen!")
-```
-
-Füge zur Navigation in `streamlit_app.py` hinzu:
-```python
-new_page = st.Page("pages/new_page.py", title="Neue Seite", icon="🔷")
-pages.append(new_page)
-```
-
-**2. Neue Filter hinzufügen**:
-
-1. Füge Filter-UI zu `data/shared_sidebar.py` hinzu
-2. Erweitere Filter-Logik in `data/filters.py`
-3. Erweitere `state_manager.py` für neue State-Variablen
-4. Teste auf allen Seiten
-
-**3. Neue Datenbank-Query**:
-
-Füge Funktion zu `data/supabase_client.py` hinzu:
-```python
-@st.cache_data(ttl=600)
-def get_my_new_data():
-    conn = supaconn()
-    result = conn.table("my_table").select("*").execute()
-    return result.data
-```
-
-### Testing
-
-**Manuelle Tests**:
-
-1. **Authentifizierung**:
-   - Login mit Google
-   - Logout
-   - Session Timeout
-
-2. **Filter**:
-   - Alle Filter durchtesten
-   - Kombinationen ausprobieren
-   - Edge Cases (leere Ergebnisse)
-
-3. **Navigation**:
-   - Alle Seiten öffnen
-   - Zurück-Buttons
-   - Query-Parameter
-
-**Debugging**:
-
-Streamlit bietet eingebaute Debug-Tools:
+Pattern:
 
 ```python
-# Debug-Modus aktivieren
-import logging
-logging.basicConfig(level=logging.DEBUG)
+if "intensity" not in st.session_state:
+    st.session_state["intensity"] = []
 
-# Session State anzeigen
-st.write(st.session_state)
-
-# Exceptions loggen
-try:
-    result = risky_operation()
-except Exception as e:
-    st.error(f"Error: {e}")
-    import traceback
-    st.code(traceback.format_exc())
+selected_intensity = st.multiselect(
+    "Intensity",
+    options=intensities,
+    default=st.session_state["intensity"],
+)
+st.session_state["intensity"] = selected_intensity
 ```
 
-### Performance-Optimierung
+### Adding new features
 
-**Häufige Bottlenecks**:
+1. **New filter in the sidebar**
+   - Add the widget and state handling inside `render_unified_sidebar` in `streamlit_app.py`.
+   - Pass the new state into the filter functions or ML recomender.
+   - Optionally persist defaults via `user.save_sidebar_preferences`.
 
-1. **Zu viele API-Calls**:
-   - ✅ Verwende `@st.cache_data`
-   - ✅ Nutze batch-Queries
-   - ❌ Vermeide Queries in Loops
+2. **New database query**
+   - Implement it in `db.py` with clear docstring and type hints.
+   - If it is read‑only and used in the UI, consider `@st.cache_data`.
 
-2. **Große Datenmengen**:
-   - ✅ Nutze Pagination
-   - ✅ Filtere früh
-   - ✅ Zeige nur sichtbare Daten
+3. **New visualisation**
+   - Implement a pure function in `analytics.py` that returns a Plotly figure.
+   - Call `st.plotly_chart(fig)` from the relevant place in `streamlit_app.py`.
 
-3. **Schwere Berechnungen**:
-   - ✅ Nutze `@st.cache_data`
-   - ✅ Berechne offline
-   - ✅ Nutze Generators für große Listen
+### Testing locally
+
+Manual test checklist:
+
+- Authentication works (login/logout).
+- Sidebar filters update results and persist via session state.
+- Ratings can be created and updated for both sports and trainers.
+- ML recommendations behave sensibly for different filter combinations.
+- Public profiles and friend lists load without errors (if used).
+
+---
 
 ## 🚢 Deployment
 
-### Lokale Entwicklung
+### Streamlit Cloud
 
-**Optimale Entwicklungsumgebung**:
-
-```bash
-# Terminal 1: Streamlit App
-cd /path/to/unisport
-source venv/bin/activate  # Mac/Linux
-streamlit run streamlit_app.py
-
-# Terminal 2: Supabase CLI (optional für lokales Testing)
-supabase start
-```
-
-**Hot Reload**: 
-- Streamlit lädt automatisch neu bei Code-Änderungen
-- Nicht für `.toml` Dateien - restart erforderlich
-
-### Streamlit Cloud Deployment
-
-**Vorteile von Streamlit Cloud**:
-- Kostenlos für öffentliche Repos
-- Automatische Deployments via Git
-- HTTPS out-of-the-box
-- Shared State Management
-
-**Deployment-Schritte**:
-
-1. **Repository zu GitHub pushen**:
-```bash
-git add .
-git commit -m "Initial commit"
-git push origin main
-```
-
-2. **Streamlit Cloud Setup**:
-   - Gehe zu [share.streamlit.io](https://share.streamlit.io)
-   - Logge dich mit GitHub ein
-   - Klicke "New app"
-   - Wähle Repository: `username/unisport`
+1. Push your repository to GitHub.
+2. Go to Streamlit Community Cloud and create a new app:
+   - Repo: `your-user/UnisportAI`
    - Branch: `main`
    - Main file: `streamlit_app.py`
-   - Klicke "Deploy!"
+3. Configure secrets in the Streamlit Cloud UI (copy contents from your local `.streamlit/secrets.toml`).
+4. Update Google OAuth redirect URIs to include your cloud URL.
 
-3. **Secrets konfigurieren**:
-   - In Streamlit Cloud: Settings → Secrets
-   - Kopiere Inhalt von `.streamlit/secrets.toml`
-   - Füge in Secrets-Editor ein
-   - Klicke "Save"
+### Other deployment options
 
-4. **Redirect URIs aktualisieren**:
-   - Gehe zu Google Cloud Console
-   - Bearbeite OAuth Credentials
-   - Füge hinzu: `https://unisportai.streamlit.app/oauth2callback`
-   - Speichern
+- **Docker + any cloud provider**
 
-**Umgebungsvariablen verwalten**:
+  ```dockerfile
+  FROM python:3.9-slim
 
-In `.streamlit/secrets.toml`:
-```toml
-# Lokal
-[connections.supabase]
-url = "https://xxxxx.supabase.co"
-key = "local-key"
+  WORKDIR /app
+  COPY . .
 
-# Production (auf Streamlit Cloud)
-# Automatisch von Cloud Secrets geholt
-```
+  RUN pip install -r requirements.txt
 
-**Deployment-Tipps**:
+  EXPOSE 8501
 
-- ✅ **Kleine Commits**: Ein Feature pro Commit
-- ✅ **Commit Messages**: Beschreibend und klar
-- ✅ **Testing**: Lokal testen vor Push
-- ❌ **Sensitive Daten**: Niemals Secrets committen
-- ❌ **Große Dateien**: Nutze Git LFS oder externe Storage
+  CMD ["streamlit", "run", "streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+  ```
 
-### Alternativen zu Streamlit Cloud
-
-**Heroku**:
-- Eigene Container-Option
-- Kostenpflichtig ab 2022
-- Mehr Konfiguration nötig
-
-**Docker + Cloud Provider**:
-```dockerfile
-FROM python:3.9-slim
-
-WORKDIR /app
-COPY . .
-
-RUN pip install -r requirements.txt
-
-EXPOSE 8501
-
-CMD ["streamlit", "run", "streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
-```
-
-## 🐛 Troubleshooting
-
-### Authentifizierungsfehler
-
-**Problem**: "Redirect URI mismatch"
-
-**Lösung**: 
-```bash
-# Prüfe .streamlit/secrets.toml
-# Füge korrekte Redirect URIs in Google Console hinzu:
-# Lokal: http://localhost:8501/oauth2callback
-# Cloud: https://unisportai.streamlit.app/oauth2callback
-```
-
-**Problem**: "Invalid credentials"
-
-**Lösung**:
-- Prüfe Client ID und Secret in secrets.toml
-- Stelle sicher dass keine Leerzeichen/Absätze vorhanden
-- Regenerate Credentials in Google Console falls nötig
-
-### Supabase Connection Issues
-
-**Problem**: "Connection refused"
-
-**Lösung**:
-```python
-# Überprüfe URL in secrets.toml
-# Format: https://xxxxx.supabase.co (kein trailing slash!)
-```
-
-**Problem**: "Invalid API Key"
-
-**Lösung**:
-- Hole neuen API Key von Supabase Dashboard
-- Stelle sicher dass `anon/public` key verwendet wird
-- Nicht `service_role` key für Client-Seite!
-
-**Problem**: "Row Level Security Policy Error"
-
-**Lösung**:
-- Check RLS Policies in Supabase Dashboard
-- Die App nutzt User-spezifische Queries
-- Policies müssen für `authenticated` user aktiv sein
-
-### Port-Konflikte
-
-**Problem**: "Port 8501 already in use"
-
-**Lösung**:
-```bash
-# Option 1: Verwende anderen Port
-streamlit run streamlit_app.py --server.port 8502
-
-# Option 2: Beende anderen Prozess
-# Windows:
-netstat -ano | findstr :8501
-taskkill /PID <PID-NUMBER> /F
-
-# Mac/Linux:
-lsof -ti:8501 | xargs kill
-```
-
-### Cache-Probleme
-
-**Problem**: Änderungen nicht sichtbar
-
-**Lösung**:
-```bash
-# Cache löschen
-streamlit cache clear
-
-# Reload (C auf Tastatur)
-# Oder: Hamburgermenü → Settings → Clear cache
-```
-
-**Problem**: Alte Daten angezeigt
-
-**Lösung**:
-- Überprüfe TTL-Werte in `@st.cache_data` Decorators
-- Reduziere TTL für Entwicklungszeit
-- Nutze `clear_on_rerun=True` für Tests
-
-### Performance-Issues
-
-**Problem**: Langsame Seiten
-
-**Ursachen prüfen**:
-```python
-import time
-
-start = time.time()
-# Deine Operation
-duration = time.time() - start
-st.write(f"Operation took: {duration:.2f}s")
-```
-
-**Häufige Ursachen**:
-- Zu viele API-Calls ohne Caching
-- Unoptimierte Queries
-- Große Datenmengen ohne Pagination
-
-**Lösungen**:
-- Nutze `@st.cache_data` wo möglich
-- Implementiere Lazy Loading
-- Zeige Ladebalken: `st.progress()` oder `st.spinner()`
-
-### Weitere häufige Probleme
-
-**Streamlit zeigt "Please wait..." ewig**:
-- Browser Cache löschen
-- Adblocker deaktivieren
-- Anderen Browser testen
-
-**Module nicht gefunden**:
-```bash
-# Stelle sicher dass virtuelle Umgebung aktiviert ist
-# Check Python Path
-which python
-# Sollte auf venv verweisen
-
-# Reinstall packages
-pip install -r requirements.txt
-```
-
-**Google Login funktioniert nicht lokal aber in Cloud**:
-- Lokaler Redirect URI prüfen
-- Https vs. Http Unterschied
-- Cookie-Einstellungen im Browser
-
-## 🤝 Contributing
-
-Wir freuen uns über Beiträge! Hier ist wie du helfen kannst:
-
-### Voraussetzungen
-
-- Python 3.9+
-- Git
-- Supabase Account
-- Google Cloud Console Account
-
-### Beitragsprozess
-
-1. **Fork das Repository**
-   ```bash
-   git fork https://github.com/RadicatorCH/UnisportAI.git
-   ```
-
-2. **Erstelle Feature Branch**
-   ```bash
-   git checkout -b feature/mein-feature
-   ```
-
-3. **Mache Änderungen und teste**
-   - Teste lokal
-   - Füge Kommentare hinzu
-   - Update README falls nötig
-
-4. **Commit und Push**
-   ```bash
-   git add .
-   git commit -m "Add: Beschreibung des Features"
-   git push origin feature/mein-feature
-   ```
-
-5. **Erstelle Pull Request**
-   - Beschreibe deine Änderungen
-   - Nenne Motivation und Use Cases
-   - Warte auf Review
-
-### Code Standards
-
-- **PEP 8**: Python Style Guide befolgen
-- **Documentation**: Docstrings für alle Funktionen
-- **Type Hints**: Wo sinnvoll verwenden
-- **Tests**: Unit Tests für neue Funktionen
-- **Backward Compatibility**: Breaking Changes dokumentieren
-
-### Bug Reports
-
-Bei Bug Reports bitte folgende Information angeben:
-- Streamlit Version
-- Python Version  
-- Betriebssystem
-- Error Message (vollständig)
-- Steps to Reproduce
-- Screenshots wenn relevant
-
-### Weitere Ressourcen
-
-- **Streamlit Docs**: [docs.streamlit.io](https://docs.streamlit.io)
-- **Supabase Docs**: [supabase.com/docs](https://supabase.com/docs)
-- **Google OAuth Guide**: [developers.google.com](https://developers.google.com/identity/protocols/oauth2)
-
-### Lizenz
-
-Dieses Projekt ist aktuell ohne explizite Lizenz. Alle Rechte vorbehalten.
-
-## 🤖 Transparenzhinweis zu KI-gestützter Entwicklung
-
-Dieses Repository wurde unter Verwendung von KI-gestützten Tools und Agenten entwickelt, darunter:
-
-- **Cursor IDE**: KI-gestützte Code-Vervollständigung und Generierung
-- **AI Coding Agents**: Automatisierte Code-Generierung und Refactoring
-
-Die Verwendung von KI-Tools in der Softwareentwicklung wird als Best Practice zunehmend transparent dokumentiert. Dieser Abschnitt informiert über den Einsatz solcher Technologien in diesem Projekt.
-
-### Was bedeutet das für Nutzer?
-
-✅ **Code-Qualität**: Alle KI-generierten Code-Bereiche wurden sorgfältig überprüft und getestet
-
-✅ **Transparenz**: Dieser Hinweis gewährleistet Ehrlichkeit über den Entwicklungsprozess
-
-✅ **Verantwortung**: Die endgültige Verantwortung für Code und Funktionalität liegt beim Autor
+- **Custom hosting** via e.g. Heroku, Fly.io or similar – treated like a normal Python web service.
 
 ---
 
-**Made with ❤️ for Universität St.Gallen**
+## 🧪 Troubleshooting
 
-*Letzte Aktualisierung: 2025-01*
+### Supabase connection issues
+
+- **“URL not provided” / “key not provided”**
+  - Check `[connections.supabase]` section in `.streamlit/secrets.toml`.
+  - Ensure variable names are correct and there is no trailing slash in the URL.
+
+- **Row Level Security (RLS) errors**
+  - Verify that your RLS policies allow `authenticated` users to read/write the required tables.
+
+### Google OAuth issues
+
+- **`redirect_uri_mismatch`**
+  - Ensure all redirect URIs configured in Google exactly match the URLs used by Streamlit.
+
+- **“This app isn’t verified”**
+  - For development, add your test accounts as test users in the OAuth consent screen.
+
+### Streamlit issues
+
+- **Port already in use**
+  - Run on another port: `streamlit run streamlit_app.py --server.port 8502`.
+
+- **Stale cache / old data**
+  - Clear cache with `streamlit cache clear` or via the hamburger menu in the app.
+
+---
+
+## 🤖 AI‑Assisted Development Transparency
+
+Parts of this project were built and refactored using AI‑assisted tools (Cursor, AI coding agents).
+
+- All generated code has been **reviewed and adapted** by a human.
+- Responsibility for correctness and behaviour of the code lies with the project maintainers.
+- This README was rewritten in English to reflect the current project state and structure.
+
+---
+
+**Made with ❤️ for the University of St. Gallen (HSG)**
+
+
