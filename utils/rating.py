@@ -108,6 +108,10 @@ def submit_sportangebot_rating(sportangebot_href, rating, comment=""):
             return False
         
         result = db_submit_rating(user_sub, "sport", sportangebot_href, rating, comment)
+        if result:
+            # Clear cache for rating-related functions after saving
+            # This ensures that updated ratings are immediately visible
+            st.cache_data.clear()
         return result
     except Exception as e:
         error_message = str(e)
@@ -155,6 +159,10 @@ def submit_trainer_rating(trainer_name, rating, comment=""):
             return False
         
         result = db_submit_rating(user_sub, "trainer", trainer_name, rating, comment)
+        if result:
+            # Clear cache for rating-related functions after saving
+            # This ensures that updated ratings are immediately visible
+            st.cache_data.clear()
         return result
     except Exception as e:
         error_message = str(e)

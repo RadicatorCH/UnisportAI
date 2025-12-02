@@ -1897,6 +1897,7 @@ with tab_overview:
                                 # can pick it up and render the corresponding course dates.
                                 st.session_state['selected_offer'] = offer
                                 st.session_state['show_details_hint'] = True  # Flag to show hint
+                                st.rerun()
                         else:
                             # Even if 10 or fewer, show button to view in details tab
                             if st.button(
@@ -1907,6 +1908,7 @@ with tab_overview:
                             ):
                                 st.session_state['selected_offer'] = offer
                                 st.session_state['show_details_hint'] = True
+                                st.rerun()
                     else:
                         st.info("No upcoming dates match your filters")
     else:
@@ -2021,60 +2023,59 @@ with tab_details:
                     if trainer_name:
                         all_trainers.add(trainer_name)
             
-            # Show ratings in a compact section (no expander to avoid nesting)
+            # Show ratings in an expandable section (closed by default)
             if all_trainers or selected:
-                st.markdown("### ⭐ Rate & Review")
-                
-                # Trainer ratings section
-                if all_trainers:
-                    st.markdown("**Trainers**")
-                    for idx, trainer_name in enumerate(sorted(all_trainers)):
-                        rating_info = get_average_rating_for_trainer(trainer_name)
+                with st.expander("### ⭐ Rate & Review", expanded=False):
+                    # Trainer ratings section
+                    if all_trainers:
+                        st.markdown("**Trainers**")
+                        for idx, trainer_name in enumerate(sorted(all_trainers)):
+                            rating_info = get_average_rating_for_trainer(trainer_name)
+                            
+                            # Compact trainer display with rating info
+                            col1, col2 = st.columns([3, 1])
+                            with col1:
+                                if rating_info['count'] > 0:
+                                    stars = '⭐' * int(round(rating_info['avg']))
+                                    st.markdown(f"**{trainer_name}** {stars} {rating_info['avg']:.1f}/5 ({rating_info['count']})")
+                                else:
+                                    st.markdown(f"**{trainer_name}** - No reviews yet")
+                            
+                            with col2:
+                                if st.button("Rate", key=f"rate_trainer_btn_{trainer_name}", use_container_width=True):
+                                    st.session_state[f"show_trainer_rating_{trainer_name}"] = not st.session_state.get(f"show_trainer_rating_{trainer_name}", False)
+                                    st.rerun()
+                            
+                            # Show rating widget if button was clicked
+                            if st.session_state.get(f"show_trainer_rating_{trainer_name}", False):
+                                render_trainer_rating_widget(trainer_name)
+                            
+                            if idx < len(sorted(all_trainers)) - 1:  # Don't show divider after last trainer
+                                st.divider()
                         
-                        # Compact trainer display with rating info
+                        if selected:
+                            st.divider()
+                    
+                    # Activity rating section
+                    if selected:
+                        st.markdown("**Activity**")
+                        rating_info = get_average_rating_for_offer(selected['href'])
                         col1, col2 = st.columns([3, 1])
                         with col1:
                             if rating_info['count'] > 0:
                                 stars = '⭐' * int(round(rating_info['avg']))
-                                st.markdown(f"**{trainer_name}** {stars} {rating_info['avg']:.1f}/5 ({rating_info['count']})")
+                                st.markdown(f"**{selected.get('name', 'Activity')}** {stars} {rating_info['avg']:.1f}/5 ({rating_info['count']} reviews)")
                             else:
-                                st.markdown(f"**{trainer_name}** - No reviews yet")
+                                st.markdown(f"**{selected.get('name', 'Activity')}** - No reviews yet")
                         
                         with col2:
-                            if st.button("Rate", key=f"rate_trainer_btn_{trainer_name}", use_container_width=True):
-                                st.session_state[f"show_trainer_rating_{trainer_name}"] = not st.session_state.get(f"show_trainer_rating_{trainer_name}", False)
+                            if st.button("Rate", key="rate_activity_btn", use_container_width=True):
+                                st.session_state["show_activity_rating"] = not st.session_state.get("show_activity_rating", False)
                                 st.rerun()
                         
                         # Show rating widget if button was clicked
-                        if st.session_state.get(f"show_trainer_rating_{trainer_name}", False):
-                            render_trainer_rating_widget(trainer_name)
-                        
-                        if idx < len(sorted(all_trainers)) - 1:  # Don't show divider after last trainer
-                            st.divider()
-                    
-                    if selected:
-                        st.divider()
-                
-                # Activity rating section
-                if selected:
-                    st.markdown("**Activity**")
-                    rating_info = get_average_rating_for_offer(selected['href'])
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        if rating_info['count'] > 0:
-                            stars = '⭐' * int(round(rating_info['avg']))
-                            st.markdown(f"**{selected.get('name', 'Activity')}** {stars} {rating_info['avg']:.1f}/5 ({rating_info['count']} reviews)")
-                        else:
-                            st.markdown(f"**{selected.get('name', 'Activity')}** - No reviews yet")
-                    
-                    with col2:
-                        if st.button("Rate", key="rate_activity_btn", use_container_width=True):
-                            st.session_state["show_activity_rating"] = not st.session_state.get("show_activity_rating", False)
-                            st.rerun()
-                    
-                    # Show rating widget if button was clicked
-                    if st.session_state.get("show_activity_rating", False):
-                        render_sportangebot_rating_widget(selected['href'])
+                        if st.session_state.get("show_activity_rating", False):
+                            render_sportangebot_rating_widget(selected['href'])
         
         st.divider()
     
