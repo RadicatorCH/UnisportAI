@@ -232,6 +232,16 @@ The app expects a PostgreSQL database (via Supabase) with at least the following
 - `vw_offers_complete` (view) – enriched sports offers with ratings, event counts & trainers
 - `vw_termine_full` (view) – enriched upcoming course dates with trainer and location data
 
+### Creating the schema from this repository
+
+To create the full schema on a fresh Supabase project:
+
+1. Open the SQL editor in the Supabase dashboard of your project.
+2. Copy the contents of `schema.sql` from this repository.
+3. Paste it into the SQL editor and run it once.
+
+This will create all required tables and views used by the application and the ML components.
+
 ---
 
 ## 🧭 Project Structure
