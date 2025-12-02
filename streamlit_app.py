@@ -61,7 +61,6 @@ from datetime import datetime, time
 
 # Our custom authentication functions
 from utils.auth import (
-    is_production,
     is_logged_in, 
     sync_user_to_supabase, 
     check_token_expiry, 
@@ -233,20 +232,6 @@ def render_unified_sidebar(sports_data=None, events=None):
                 on_click=st.login,
                 args=["google"]
             )
-            
-            # Show production OAuth configuration reminder
-            if is_production():
-                with st.expander("⚠️ OAuth Configuration Check", expanded=False):
-                    st.info("""
-                    **If login fails with a redirect error:**
-                    
-                    Ensure your Google OAuth redirect URI in Google Cloud Console is set to:
-                    ```
-                    https://your-app-name.streamlit.app/oauth2callback
-                    ```
-                    
-                    **Important:** Remove any `localhost` redirect URIs from production OAuth credentials.
-                    """)
             
             st.markdown("<br>", unsafe_allow_html=True)
         else:
