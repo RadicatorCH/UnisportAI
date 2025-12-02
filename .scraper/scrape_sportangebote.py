@@ -236,34 +236,39 @@ def extract_trainer_names(leitung):
     return names
 
 
-# Function to parse time range like "16:10 to 17:40" into start and end times
+# Function to parse time ranges like "16:10 - 17:40" or "440-100" into start/end times
 def parse_time_range(zeit_txt):
+    """
+    Supported examples:
+    - "16:10 - 17:40"
+    - "16.10-17.40"
+    - "440-100"  (interpreted as 04:40-01:00)
+    """
     if not zeit_txt or not zeit_txt.strip():
         return None, None
-    
-    # Replace dots with colons for consistency
-    zeit_normalized = zeit_txt.strip().replace(".", ":")
-    
-    # Try different patterns
-    patterns = [
-        r"(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})",  # 16:10 to 17:40
-        r"(\d{1,2}):(\d{2})\s*-\s*(\d{1,2})\.(\d{2})",  # 16:10 to 17.40
-        r"(\d{1,2})\.(\d{2})\s*-\s*(\d{1,2}):(\d{2})",  # 16.10 to 17:40
-    ]
-    
-    for pattern in patterns:
-        match = re.match(pattern, zeit_normalized)
-        if match:
-            h1, m1, h2, m2 = match.groups()
-            start_hour = int(h1)
-            start_min = int(m1)
-            end_hour = int(h2)
-            end_min = int(m2)
-            start_time = f"{start_hour:02d}:{start_min:02d}:00"
-            end_time = f"{end_hour:02d}:{end_min:02d}:00"
-            return start_time, end_time
-    
-    return None, None
+
+    # Split at the dash into start and end part
+    parts = zeit_txt.split("-")
+    if len(parts) != 2:
+        return None, None
+
+    def parse_part(part):
+        # Keep only digits (removes ":" or ".")
+        digits = re.sub(r"[^0-9]", "", part)
+        if len(digits) < 3:
+            return None
+        # Last two digits are minutes, the rest are hours
+        hour = int(digits[:-2])
+        minute = int(digits[-2:])
+        return f"{hour:02d}:{minute:02d}:00"
+
+    start_time = parse_part(parts[0])
+    end_time = parse_part(parts[1])
+
+    if not start_time:
+        return None, None
+
+    return start_time, end_time
 
 
 # Function to get all dates for a course

@@ -21,27 +21,17 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- ---------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS public.users (
-    id                      uuid PRIMARY KEY,
-    email                   text UNIQUE,
-    sub                     text UNIQUE,
-    name                    text,
-    picture                 text,
+    id          uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    email       text UNIQUE,
+    sub         text UNIQUE,
+    name        text,
+    picture     text,
 
-    created_at              timestamptz DEFAULT now(),
-    updated_at              timestamptz DEFAULT now(),
-    last_login              timestamptz,
+    created_at  timestamptz DEFAULT now(),
+    updated_at  timestamptz DEFAULT now(),
+    last_login  timestamptz,
 
-    is_public               boolean DEFAULT false,
-    bio                     text,
-
-    preferences             jsonb DEFAULT '{}'::jsonb,
-
-    -- Preferences stored as simple text arrays for clarity
-    preferred_intensities   text[],
-    preferred_focus         text[],
-    preferred_settings      text[],
-    favorite_location_names text[],
-    preferred_weekdays      text[]
+    is_public   boolean DEFAULT false
 );
 
 -- ---------------------------------------------------------------------
@@ -172,25 +162,6 @@ CREATE TABLE IF NOT EXISTS public.trainer_user_ratings (
     CONSTRAINT trainer_user_ratings_trainer_name_fkey
         FOREIGN KEY (trainer_name)
         REFERENCES public.trainer(name)
-);
-
--- ---------------------------------------------------------------------
--- 4. Favorites and social graph
--- ---------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS public.user_favorites (
-    id                uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id           uuid NOT NULL,
-    sportangebot_href text NOT NULL,
-    created_at        timestamptz DEFAULT now(),
-
-    CONSTRAINT user_favorites_user_id_fkey
-        FOREIGN KEY (user_id)
-        REFERENCES public.users(id),
-
-    CONSTRAINT user_favorites_sportangebot_href_fkey
-        FOREIGN KEY (sportangebot_href)
-        REFERENCES public.sportangebote(href)
 );
 
 CREATE TABLE IF NOT EXISTS public.friend_requests (
