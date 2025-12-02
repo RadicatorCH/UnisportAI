@@ -2271,7 +2271,7 @@ with tab_athletes:
     
     if not is_logged_in():
         # User is NOT logged in - show info message and stop
-        st.info("🔒 **Login required** - Sign in with Google in the sidebar to connect with other athletes!")
+        st.info("🔒 **Login required** - Sign in with Google in the sidebar")
         
         st.markdown("""
         ### Why sign in?
@@ -2647,7 +2647,7 @@ with tab_profile:
     # CHECK LOGIN STATUS
     # =========================================================================
     if not is_logged_in():
-        st.info("🔒 **Login required** - Sign in with Google in the sidebar to manage your profile!")
+        st.info("🔒 **Login required** - Sign in with Google in the sidebar")
         
         st.markdown("""
         ### What you can do with a profile:
