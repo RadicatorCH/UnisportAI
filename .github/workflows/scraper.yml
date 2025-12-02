@@ -1,101 +1,118 @@
-## Workflow name as shown in the GitHub Actions overview
 name: Run Webscraper Scripts
 
-## Defines when the workflow is triggered
+# This workflow runs our scraping scripts automatically
+# We learned that GitHub Actions can run scripts on a schedule or manually
 on:
-  # Scheduled run: executes every day at 6:00 AM UTC (7:00 CET / 8:00 CEST)
+  # Schedule: run every day at 6:00 AM UTC (which is 7:00 AM in Switzerland during winter)
+  # The cron format is: minute hour day month weekday
+  # 0 6 * * * means: at minute 0 of hour 6, every day, every month, every weekday
   schedule:
-    # `cron` format: minute hour day_of_month month day_of_week
     - cron: '0 6 * * *'
-
-  # Allows manually starting the workflow from the GitHub UI (button "Run workflow")
+  
+  # workflow_dispatch allows us to manually trigger this from the GitHub website
+  # This is useful when we want to test or run it outside the schedule
   workflow_dispatch:
 
-## The actual jobs of the workflow start here
 jobs:
-  # Logical name of the job
+  # We named this job "scrape": it's just a name we chose
   scrape:
-    # Defines which virtual machine (runner) the job uses
+    # This tells GitHub to run our code on an Ubuntu Linux machine
+    # We use ubuntu latest so we always get the newest version
     runs-on: ubuntu-latest
 
-    # Individual steps that are executed sequentially
     steps:
-      # 1) Load repository code from GitHub into the runner
+      # Step 1: Get our code from GitHub
+      # We need this because the machine starts empty and doesn't have our code yet
+      # actions/checkout@v4 is a pre-made action that downloads our repository
       - name: Checkout repository
-        # Official GitHub Action that checks out the repository code
         uses: actions/checkout@v4
 
-      # 2) Helper step for debugging: prints directory structure and important files
+      # Step 2: Debug step: we added this to help us understand what's happening
+      # When something goes wrong, these print statements show us the file structure
+      # This helped us a lot during development when things weren't working
       - name: Debug workspace layout
-        # `run: |` means: everything below is a multi-line shell script (bash)
         run: |
-          # Show current working directory
+          # Print current directory so we know where we are
           echo "PWD=$(pwd)"
-          # Try to print the Git root directory (if available)
+          # Try to show the Git root directory (where our repository is)
           echo "Git root:" && git rev-parse --show-toplevel || true
-          # List all files in the current top-level directory
+          # List all files in the current directory
           echo "Tree (top-level):" && ls -la || true
-          # Check whether a requirements.txt exists and show it if present
+          # Check if requirements.txt exists (we need it for installing packages)
           echo "Find requirements.txt:" && ls -la requirements.txt || echo "requirements.txt not found in root" || true
-          # Check whether the .scraper folder exists and list its contents
+          # Check if the .scraper folder exists (where our scripts are)
           echo "List .scraper:" && ls -la .scraper || echo ".scraper not found" || true
 
-      # 3) Set up Python environment
+      # Step 3: Install Python
+      # We need Python to run our scripts
+      # actions/setup-python@v5 is another pre-made action that installs Python for us
       - name: Set up Python
-        # Uses the official action to install a specific Python version
         uses: actions/setup-python@v5
         with:
-          # Python version to use
+          # We use Python 3.11 because that's what we tested our code with
           python-version: '3.11'
-          # Enable caching for pip dependencies to speed up builds
+          # Cache pip packages: this makes it faster because it doesn't re-download packages every time
+          # We learned that caching is important for speed
           cache: 'pip'
-          # Defines which requirements files are used for the cache key
+          # This tells the cache which file to look at for dependencies
           cache-dependency-path: '**/requirements.txt'
 
-      # 4) Install Python dependencies
+      # Step 4: Install all the Python packages we need
+      # Our scripts use libraries like requests, beautifulsoup4, etc.
+      # We need to install them before we can run our scripts
       - name: Install dependencies
         run: |
-          # If a requirements.txt exists, install all packages from there
+          # First check if requirements.txt exists
+          # If it does, install everything from there (this is the normal way)
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           else
-            # Fallback: install a minimal set of dependencies if no requirements.txt is present
+            # If requirements.txt is missing, install the packages we know we need
+            # This is a fallback in case something goes wrong
             echo "requirements.txt missing – installing minimal dependencies"
             pip install requests beautifulsoup4 lxml python-dateutil supabase streamlit icalendar python-dotenv urllib3
           fi
 
-      # 5) First script: extract locations from HTML
+      # Step 5: Run our first script
+      # This script extracts location data from the Unisport website
+      # We need to pass the Supabase credentials as environment variables
+      # Environment variables are like secret settings that the script can read
       - name: Run extract_locations_from_html.py
-        # Pass secrets as environment variables to the script
         env:
+          # These come from GitHub Secrets: we set them up in the repository settings
+          # This way we don't put passwords directly in the code (which would be unsafe)
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          # Run the Python script that reads location data from HTML files
+          # Run the Python script
           python .scraper/extract_locations_from_html.py
 
-      # 6) Second script: scrape sports offers and integrate with Supabase / email / Loops
+      # Step 6: Run our second script
+      # This is the main script that scrapes all the sport offers and courses
+      # It needs more environment variables because it also sends emails
       - name: Run scrape_sportangebote.py
-        # Additional secrets required by the script as environment variables
         env:
+          # Supabase credentials again (needed for database access)
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          # Admin email for sending notifications if something goes wrong
           ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+          # Loops API key for sending emails to users
           LOOPS_API_KEY: ${{ secrets.LOOPS_API_KEY }}
         run: |
-          # Run the main scraping script
           python .scraper/scrape_sportangebote.py
 
-      # 7) Final script: update cancellations in the data
+      # Step 7: Run our third script
+      # This script checks for cancelled courses and updates the database
+      # It runs last because it depends on the data from the previous scripts
       - name: Run update_cancellations.py
         env:
-          # Use the same Supabase URL/Key secrets as in the other steps
+          # Only needs Supabase credentials
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          # Run the script that updates cancellations
           python .scraper/update_cancellations.py
 
-# Note on the use of AI tools in the development of this workflow:
-# parts of this configuration were created with the assistance of AI-based tools
-# (e.g. Cursor and GitHub Copilot) and subsequently reviewed and validated.
+# Academic Integrity Notice:
+# This workflow file was developed by AI-based tools (Cursor and Github Copilot).
+# All code was reviewed, validated, and modified by the author.

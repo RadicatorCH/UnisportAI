@@ -9,15 +9,11 @@ The app focuses on:
 - **Ratings**: Rate activities and trainers and see community feedback.
 - **Personalization**: Save filter defaults and favourites per user.
 
-All of the content below is **fully up to date** with the current flat project layout:
+All of the content below is **fully up to date** with the current project structure:
 
-- `streamlit_app.py`
-- `auth.py`
-- `db.py`
-- `analytics.py`
-- `rating.py`
-- `user.py`
-- `ml/` (training utilities and model artifacts)
+- `streamlit_app.py` - Main application entry point
+- `utils/` - Utility modules (auth, db, rating, filters, ml_utils, formatting)
+- `ml/` - ML training utilities and model artifacts
 
 ---
 
@@ -219,14 +215,12 @@ The app expects a PostgreSQL database (via Supabase) with at least the following
 - `sportangebote_user_ratings` – user ratings for sports
 - `trainer` – trainers with base metadata and default rating
 - `trainer_user_ratings` – user ratings for trainers
-- `user_favorites` – mapping between users and their favourite sports
 - `user_friends` – friendship graph between users
 - `friend_requests` – pending and historical friend requests
 - `etl_runs` – simple ETL bookkeeping table for scraper components
 - `ml_training_data` (view) – feature matrix for the ML recommender
 - `vw_offers_complete` (view) – enriched sports offers with ratings, event counts & trainers
 - `vw_termine_full` (view) – enriched upcoming course dates with trainer and location data
-- `vw_user_social_stats` (view) – users with aggregated social statistics (friend counts, pending requests)
 
 ---
 
@@ -237,11 +231,14 @@ Current (simplified) layout:
 ```text
 UnisportAI/
 ├── streamlit_app.py    # Main Streamlit application
-├── auth.py             # Authentication helpers (Streamlit + Google OAuth)
-├── db.py               # Supabase data access layer
-├── analytics.py        # Plotly analytics & visualisations
-├── rating.py           # Rating widgets for sports & trainers
-├── user.py             # High‑level user management & preferences
+├── utils/              # Utility modules (refactored from root)
+│   ├── __init__.py     # Package exports
+│   ├── auth.py         # Authentication helpers (Streamlit + Google OAuth)
+│   ├── db.py           # Supabase data access layer
+│   ├── rating.py       # Rating widgets for sports & trainers
+│   ├── filters.py      # Event and offer filtering logic
+│   ├── ml_utils.py     # ML model loading and recommendations
+│   └── formatting.py   # HTML formatting utilities
 ├── ml/                 # ML recommender utilities and model
 │   ├── recommender.py  # KNN recommender class (training / testing)
 │   ├── train.py        # CLI script to train and save the model
@@ -258,48 +255,51 @@ UnisportAI/
 - **`streamlit_app.py`**
   - Entry point of the web application
   - Configures page layout and sidebar
-  - Calls `auth` helpers to check login and synchronise users
+  - Calls `utils.auth` helpers to check login and synchronise users
   - Reads filters from session state
-  - Loads offers and events via `db` helpers
+  - Loads offers and events via `utils.db` helpers
   - Integrates ML recommender and analytics views
+  - Contains UI components: `render_unified_sidebar()`, `render_analytics_section()`
 
-- **`auth.py`**
+- **`utils/auth.py`**
   - `is_logged_in()` – checks Streamlit user session
   - `handle_logout()` – clears session state and logs out
   - `check_token_expiry()` – optional expiry check
   - `sync_user_to_supabase()` – creates/updates user row in Supabase
   - Accessors like `get_user_sub()` and `get_user_email()`
 
-- **`db.py`**
+- **`utils/db.py`**
   - Creates a cached Supabase connection via `st-supabase-connection`
   - Provides high‑level query functions:
     - `get_offers_complete()`
-    - `get_events(offer_href: Optional[str])`
+    - `get_events(offer_href)`
     - `get_user_complete(user_sub)`
     - `update_user_settings(...)`
-    - `save_filter_preferences(...)`
-    - `get_user_favorites(...)` / `update_user_favorites(...)`
     - `get_public_users()`, `get_user_friends()`, friend request helpers
     - Ratings helpers and ML training data loaders
+    - `test_database_connection()` – connection validation
+    - `get_data_timestamp()` – ETL run timestamp retrieval
 
-- **`user.py`**
-  - Thin service layer on top of `db.py` and `auth.py`
-  - Encapsulates:
-    - Loading the current user profile
-    - Saving sidebar preferences
-    - Managing favourites
-    - Submitting ratings
-    - Lightweight in‑memory user activity log in `st.session_state`
-
-- **`rating.py`**
+- **`utils/rating.py`**
   - Streamlit UI components for ratings
-  - Uses `user.submit_*_rating` and `db` rating queries
+  - Uses `utils.rating.submit_*_rating` and `utils.db` rating queries
   - Expander‑based widgets for activities and trainers
 
-- **`analytics.py`**
-  - Pure visualisation/analytics module
-  - All functions take plain data structures (lists or DataFrames) and return Plotly figures
-  - Consumption happens in `streamlit_app.py`
+- **`utils/filters.py`**
+  - Event and offer filtering logic
+  - `check_event_matches_filters()` – single event filter validation
+  - `filter_events()` – filter list of events
+  - `filter_offers()` – filter sports offers with ML scoring
+
+- **`utils/ml_utils.py`**
+  - ML model loading and recommendation functions
+  - `load_knn_model()` – load pre-trained KNN model with caching
+  - `build_user_preferences_from_filters()` – convert filters to feature vector
+  - `get_ml_recommendations()` – get ML-based sport recommendations
+
+- **`utils/formatting.py`**
+  - HTML formatting utilities
+  - `create_user_info_card_html()` – user info card HTML generation
 
 - **`ml/`**
   - Not required for running the app if a pre‑trained model exists
@@ -312,8 +312,12 @@ UnisportAI/
 ### Code style
 
 - Follow **PEP 8** for Python code.
-- Use **type hints** where possible, especially in `db.py` and `user.py`.
-- Keep UI logic in `streamlit_app.py`, `rating.py` and Streamlit pages; keep `db.py` free of UI.
+- Keep UI logic in `streamlit_app.py` and `utils/rating.py`; keep `utils/db.py` free of UI.
+- Function names: `snake_case`
+- Class names: `PascalCase`
+- Constants: `UPPER_CASE`
+- Private functions: `_leading_underscore`
+- Code is written in a beginner-friendly style with explicit loops and clear variable names
 
 ### Working with session state
 
@@ -342,15 +346,14 @@ st.session_state["intensity"] = selected_intensity
 
 1. **New filter in the sidebar**
    - Add the widget and state handling inside `render_unified_sidebar` in `streamlit_app.py`.
-   - Pass the new state into the filter functions or ML recomender.
-   - Optionally persist defaults via `user.save_sidebar_preferences`.
+   - Pass the new state into the filter functions in `utils/filters.py` or ML recommender in `utils/ml_utils.py`.
 
 2. **New database query**
-   - Implement it in `db.py` with clear docstring and type hints.
+   - Implement it in `utils/db.py` with clear docstring.
    - If it is read‑only and used in the UI, consider `@st.cache_data`.
 
 3. **New visualisation**
-   - Implement a pure function in `analytics.py` that returns a Plotly figure.
+   - Implement a Plotly figure function directly in `streamlit_app.py` or create a helper function.
    - Call `st.plotly_chart(fig)` from the relevant place in `streamlit_app.py`.
 
 ### Testing locally
@@ -381,18 +384,18 @@ Manual test checklist:
 
 - **Docker + any cloud provider**
 
-  ```dockerfile
-  FROM python:3.9-slim
+```dockerfile
+FROM python:3.9-slim
 
-  WORKDIR /app
-  COPY . .
+WORKDIR /app
+COPY . .
 
-  RUN pip install -r requirements.txt
+RUN pip install -r requirements.txt
 
-  EXPOSE 8501
+EXPOSE 8501
 
-  CMD ["streamlit", "run", "streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
-  ```
+CMD ["streamlit", "run", "streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+```
 
 - **Custom hosting** via e.g. Heroku, Fly.io or similar – treated like a normal Python web service.
 

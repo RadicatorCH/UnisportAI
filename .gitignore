@@ -22,7 +22,7 @@ client_secret_*.json
 .DS_Store
 Thumbs.db
 
-# IDE (optional - remove if you want to commit IDE settings)
+# IDE settings
 .idea/
 .vscode/
 

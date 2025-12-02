@@ -3,34 +3,39 @@
 UNISPORTAI STREAMLIT APPLICATION
 ================================================================================
 
-PURPOSE:
-This is a simplified, heavily documented version of the UnisportAI application,
-designed as a clear reference implementation for a university project setting.
+WHY THIS FILE EXISTS:
+This is the canonical entry point for the entire UnisportAI system.
+It serves as the main application file that renders UI widgets and
+orchestrates the data flow for a data-heavy Streamlit app.
 
-WHAT THIS APP DOES:
-- Displays sports courses and activities from Unisport HSG
-- Allows filtering and searching through activities
-- Provides AI-powered recommendations using Machine Learning
-- Enables user authentication and social features
-- Shows course dates, ratings, and user profiles
+FEATURE CHECKLIST:
+1. Content layer - sport offers, timetable events, trainer info
+2. Filter + ML layer - rule-based filters plus KNN recommendations
+3. Social layer - authentication, user cards, profile visibility
+4. Analytics layer - aggregated charts (weekday/hour/location stats)
 
-CONCEPTS DEMONSTRATED:
-1. Page configuration and layout
-2. Session state management
-3. Multi-tab navigation
-4. Sidebar filters and widgets
-5. Database integration (Supabase)
-6. Caching strategies (@st.cache_resource, @st.cache_data)
-7. User authentication
-8. Interactive visualizations (Plotly)
+ARCHITECTURE MAP:
+Browser ↔ Streamlit widgets
+           ↓
+    streamlit_app.py
+           ↓
+    utils service modules (auth/db/ml/filters/rating/formatting)
+           ↓
+    Supabase (managed Postgres + cached views)
 
-HOW TO READ THIS FILE:
-- Use the comments to understand WHY each pattern is used
-- Follow the data flow from database client to UI components
-- Observe how session state and caching keep the UI responsive
+DEVELOPER ROADMAP FOR THIS FILE:
+- PART 1: imports + global configuration
+- PART 2: helper sections referencing utils modules (separation of concerns)
+- PART 3: sidebar + session-state logic (single source of truth for filters)
+- PART 4: view functions (dashboard tabs, analytics, recommendations)
+- PART 5: page orchestration (routing, gating on auth state)
 
-ORIGINAL FILE: streamlit_app.py
-THIS VERSION: Structured and commented for clarity in an academic project
+HOW TO STUDY THIS DOCUMENT:
+- Read comments as design justifications. Every large block explains
+  why the pattern was chosen (cache vs. no cache, columns vs. tabs, etc.).
+- Trace the data loop: Input widgets → session_state → filters/ml →
+  UI render. Understanding this loop is crucial for understanding the app.
+- Comments throughout highlight best practices and design decisions.
 ================================================================================
 """
 
@@ -45,11 +50,8 @@ import streamlit as st
 # Plotly for interactive charts and visualizations
 import plotly.graph_objects as go
 
-# joblib for loading saved machine learning models
-import joblib
-
-# numpy for numerical operations (used in ML)
-import numpy as np
+# pandas for data manipulation and DataFrame display
+import pandas as pd
 
 # Path for file system operations
 from pathlib import Path
@@ -57,18 +59,8 @@ from pathlib import Path
 # datetime for handling dates and times
 from datetime import datetime, time
 
-# Type hints for better code documentation
-from typing import Optional, List, Dict, Any
-
-# scikit-learn components for machine learning
-from sklearn.neighbors import NearestNeighbors
-from sklearn.preprocessing import StandardScaler
-
-# Timezone handling for correct time display
-from zoneinfo import ZoneInfo
-
 # Our custom authentication functions
-from auth import (
+from utils.auth import (
     is_logged_in, 
     sync_user_to_supabase, 
     check_token_expiry, 
@@ -76,56 +68,22 @@ from auth import (
     get_user_sub
 )
 
-# Database connection and query functions
-from db import get_supabase_client
+# Database connection and query functions are imported from utils below
 
-# =============================================================================
-# DATABASE CONNECTION HELPER
-# =============================================================================
-# PURPOSE: Test database connection and provide helpful error messages
-# PATTERN: Handle external service dependencies explicitly and early
-
-def test_database_connection():
-    """
-    Test if Supabase database connection is available.
-    
-    PURPOSE:
-        Provide clear feedback about database status and fail fast when
-        required configuration is missing.
-    PATTERN:
-        Validate external services before using them in the main UI flow.
-    
-    Returns:
-        tuple: (success: bool, message: str)
-    """
-    try:
-        client = get_supabase_client()
-        # Try a simple query to verify connection works
-        client.table("etl_runs").select("ran_at").limit(1).execute()
-        return True, "✅ Database connection successful"
-    except Exception as e:
-        error_msg = str(e)
-        if "URL not provided" in error_msg or "key not provided" in error_msg:
-            return False, """
-❌ **Supabase credentials missing**
-
-This application needs database credentials to work correctly.
-
-**How to fix this:**
-1. Create/check `.streamlit/secrets.toml` in your project root
-2. Add your Supabase credentials:
-   
-   [connections.supabase]
-   url = "your-supabase-url"
-   key = "your-supabase-key"
-
-3. Restart the Streamlit app
-
-Design note: configuring external services explicitly avoids hard-to-debug
-runtime errors later in the request flow.
-"""
-        else:
-            return False, f"❌ **Database connection failed:** {error_msg}"
+# Utility functions (refactored from this file)
+from utils import (
+    test_database_connection,
+    get_data_timestamp,
+    load_knn_model,
+    build_user_preferences_from_filters,
+    get_ml_recommendations,
+    check_event_matches_filters,
+    filter_offers,
+    filter_events,
+    create_user_info_card_html
+)
+# Also import db functions directly for convenience
+from utils.db import get_supabase_client, get_offers_complete, get_events
 
 # =============================================================================
 # STREAMLIT PAGE CONFIGURATION
@@ -142,384 +100,20 @@ st.set_page_config(
 )
 
 # =============================================================================
-# PART 2: ML INTEGRATION COMPONENTS (UNCHANGED FROM ORIGINAL)
+# PART 2: ML INTEGRATION (moved to utils/ml_utils.py)
 # =============================================================================
-# PURPOSE: Machine Learning recommendation system using K-Nearest Neighbors
-# ADVANCED TOPIC: This section uses scikit-learn for AI-powered recommendations
-# FOR BEGINNERS: You don't need to understand every detail here yet
-# KEY CONCEPT: We load a pre-trained model and use it to find similar sports
-
-# Feature order (13 features)
-ML_FEATURE_COLUMNS = [
-    'balance', 'flexibility', 'coordination', 'relaxation',
-    'strength', 'endurance', 'longevity',
-    'intensity',
-    'setting_team', 'setting_fun', 'setting_duo',
-    'setting_solo', 'setting_competitive'
-]
-
-ML_MODEL_PATH = Path(__file__).resolve().parent / "ml" / "models" / "knn_recommender.joblib"
-
-@st.cache_resource
-def load_knn_model():
-    """Load the trained KNN model with caching.
-    
-    Uses @st.cache_resource to load the model once and reuse it across all
-    sessions and reruns. ML models (NearestNeighbors, StandardScaler) are
-    unserializable objects that should be cached with cache_resource.
-    
-    Returns:
-        dict: Model artifacts (knn_model, scaler, sports_df) or None if not found
-    """
-    if not ML_MODEL_PATH.exists():
-        st.warning(f"⚠️ KNN model not found at {ML_MODEL_PATH}. Run train.py first.")
-        return None
-    
-    try:
-        data = joblib.load(ML_MODEL_PATH)
-        return {
-            'knn_model': data['knn_model'],
-            'scaler': data['scaler'],
-            'sports_df': data['sports_df']
-        }
-    except Exception as e:
-        st.error(f"Error loading KNN model: {e}")
-        return None
-
-def build_user_preferences_from_filters(selected_focus, selected_intensity, selected_setting):
-    """
-    Build user preference vector from sidebar filter selections
-    
-    Args:
-        selected_focus: List of selected focus values (e.g., ['strength', 'endurance'])
-        selected_intensity: List of selected intensity values (e.g., ['high'])
-        selected_setting: List of selected setting values (e.g., ['solo'])
-    
-    Returns:
-        Dict with 13 feature values (0.0 or 1.0)
-    """
-    preferences = {}
-    
-    # Normalize inputs to lowercase for matching
-    focus_lower = [f.lower() for f in selected_focus] if selected_focus else []
-    setting_lower = [s.lower() for s in selected_setting] if selected_setting else []
-    
-    # Focus features (7 binary)
-    focus_features = ['balance', 'flexibility', 'coordination', 'relaxation', 
-                     'strength', 'endurance', 'longevity']
-    for feature in focus_features:
-        preferences[feature] = 1.0 if feature in focus_lower else 0.0
-    
-    # Intensity (1 continuous) - average if multiple selected
-    if selected_intensity:
-        intensity_map = {'low': 0.33, 'moderate': 0.67, 'high': 1.0}
-        intensity_values = [intensity_map.get(i.lower(), 0.67) for i in selected_intensity]
-        preferences['intensity'] = sum(intensity_values) / len(intensity_values)
-    else:
-        preferences['intensity'] = 0.0
-    
-    # Setting features (5 binary)
-    setting_features = ['team', 'fun', 'duo', 'solo', 'competitive']
-    for feature in setting_features:
-        preferences[f'setting_{feature}'] = 1.0 if feature in setting_lower else 0.0
-    
-    return preferences
-
-def get_ml_recommendations(selected_focus, selected_intensity, selected_setting, 
-                          min_match_score=75, max_results=10, exclude_sports=None):
-    """
-    Get ML-based sport recommendations using KNN
-    
-    Args:
-        selected_focus: List of selected focus filters
-        selected_intensity: List of selected intensity filters
-        selected_setting: List of selected setting filters
-        min_match_score: Minimum match percentage (0-100)
-        max_results: Maximum number of recommendations
-        exclude_sports: List of sport names to exclude (e.g., already shown in main results)
-    
-    Returns:
-        List of dicts: [{'sport': name, 'match_score': percentage, 'item': offer_dict}, ...]
-    """
-    # Load model
-    model_data = load_knn_model()
-    if model_data is None:
-        return []
-    
-    knn_model = model_data['knn_model']
-    scaler = model_data['scaler']
-    sports_df = model_data['sports_df']
-    
-    # Build user preferences from filters
-    user_prefs = build_user_preferences_from_filters(
-        selected_focus, selected_intensity, selected_setting
-    )
-    
-    # Build feature vector
-    user_vector = np.array([user_prefs.get(col, 0.0) for col in ML_FEATURE_COLUMNS])
-    user_vector = user_vector.reshape(1, -1)
-    
-    # Scale
-    user_vector_scaled = scaler.transform(user_vector)
-    
-    # Get all sports as neighbors (we'll filter by threshold later)
-    n_sports = len(sports_df)
-    distances, indices = knn_model.kneighbors(user_vector_scaled, n_neighbors=n_sports)
-    
-    # Build recommendations
-    recommendations = []
-    exclude_sports = exclude_sports or []
-    
-    for distance, idx in zip(distances[0], indices[0]):
-        sport_name = sports_df.iloc[idx]['Angebot']
-        
-        # Skip if in exclude list
-        if sport_name in exclude_sports:
-            continue
-        
-        # Convert distance to similarity score (0-100%)
-        match_score = (1 - distance) * 100
-        
-        # Only include if above threshold
-        if match_score >= min_match_score:
-            recommendations.append({
-                'sport': sport_name,
-                'match_score': round(match_score, 1),
-                'item': sports_df.iloc[idx].to_dict()
-            })
-        
-        # Stop if we have enough
-        if len(recommendations) >= max_results:
-            break
-    
-    return recommendations
+# NOTE: ML functions are now imported from utils.ml_utils
+# - load_knn_model()
+# - build_user_preferences_from_filters()
+# - get_ml_recommendations()
 
 # =============================================================================
-# PART 3: FILTER UTILITIES
+# PART 3: FILTER UTILITIES (moved to utils/filters.py)
 # =============================================================================
-# PURPOSE: Functions to filter sports activities and events based on user criteria
-# STREAMLIT CONCEPT: These utilities work with session state filters
-# FOR BEGINNERS: Notice how we break down complex filtering into clear steps
-
-def check_event_matches_filters(event, sport_filter, weekday_filter,
-                                date_start, date_end, time_start, time_end,
-                                location_filter, hide_cancelled):
-    """
-    Check if a single event matches all the provided filters.
-    
-    PURPOSE: Instead of one complex condition, we check filters one by one
-    BENEFIT: Easier to debug and understand what's being filtered out
-    
-    Args:
-        event: Dictionary containing event data
-        sport_filter: List of sport names to include (or None/empty for all)
-        weekday_filter: List of weekdays to include (or None/empty for all)
-        date_start: Start date for filtering (or None for no start limit)
-        date_end: End date for filtering (or None for no end limit)
-        time_start: Start time for filtering (or None for no start limit)
-        time_end: End time for filtering (or None for no end limit)
-        location_filter: List of locations to include (or None/empty for all)
-        hide_cancelled: Boolean, if True exclude cancelled events
-    
-    Returns:
-        Boolean: True if event matches all filters, False otherwise
-    """
-    # STEP 1: Check sport filter
-    # If user selected specific sports, only show those
-    if sport_filter and len(sport_filter) > 0:
-        event_sport = event.get('sport_name', '')
-        if event_sport not in sport_filter:
-            return False  # This event doesn't match, exclude it
-    
-    # STEP 2: Check if event is cancelled
-    # If user wants to hide cancelled events, exclude them
-    if hide_cancelled and event.get('canceled'):
-        return False
-    
-    # STEP 3: Parse the event's start time
-    # Convert ISO format string to datetime object for comparison
-    start_time = event.get('start_time')
-    if isinstance(start_time, str):
-        # Replace 'Z' with '+00:00' for proper timezone handling
-        start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-    else:
-        start_dt = start_time
-    
-    # STEP 4: Check weekday filter
-    # strftime('%A') gives us day name like 'Monday', 'Tuesday', etc.
-    if weekday_filter and len(weekday_filter) > 0:
-        event_weekday = start_dt.strftime('%A')
-        if event_weekday not in weekday_filter:
-            return False
-    
-    # STEP 5: Check date range filter
-    event_date = start_dt.date()
-    
-    # Check if event is before start date
-    if date_start and event_date < date_start:
-        return False
-    
-    # Check if event is after end date
-    if date_end and event_date > date_end:
-        return False
-    
-    # STEP 6: Check time range filter
-    if time_start or time_end:
-        event_time = start_dt.time()
-        
-        # Check if event starts before allowed time
-        if time_start and event_time < time_start:
-            return False
-        
-        # Check if event starts after allowed time
-        if time_end and event_time > time_end:
-            return False
-    
-    # STEP 7: Check location filter
-    if location_filter and len(location_filter) > 0:
-        event_location = event.get('location_name', '')
-        if event_location not in location_filter:
-            return False
-    
-    # If we made it here, event passed all filters!
-    return True
-
-
-def filter_offers(offers, show_upcoming_only=True, search_text="", 
-                 intensity=None, focus=None, setting=None):
-    """
-    Filter sports offers (activities) based on various criteria.
-    
-    PURPOSE: Show users only the activities that match their preferences
-    PATTERN: Filter data step-by-step for clarity
-    
-    Args:
-        offers: List of offer dictionaries
-        show_upcoming_only: If True, only show offers with future events
-        search_text: Text to search in activity names
-        intensity: List of intensity levels to include (e.g., ['low', 'high'])
-        focus: List of focus areas to include (e.g., ['strength', 'endurance'])
-        setting: List of settings to include (e.g., ['solo', 'team'])
-    
-    Returns:
-        List of filtered offers
-    """
-def filter_offers(offers, show_upcoming_only=True, search_text="", 
-                 intensity=None, focus=None, setting=None, 
-                 min_match_score=0, max_results=20):
-    """
-    Filter sports offers (activities) based on various criteria.
-    
-    PURPOSE: Show users activities that match their preferences
-    PATTERN: Hard filters (must match) + ML scoring (when no hard filters)
-    
-    LOGIC:
-        - If intensity/focus/setting filters are selected: strict 100% match filtering
-        - If no filters selected: show all with ML scoring for ranking
-    
-    Args:
-        offers: List of offer dictionaries
-        show_upcoming_only: If True, only show offers with future events
-        search_text: Text to search in activity names
-        intensity: List of intensity levels (strict filter)
-        focus: List of focus areas (strict filter)
-        setting: List of settings (strict filter)
-        min_match_score: Minimum match percentage (0-100) - only used when no hard filters
-        max_results: Maximum number of results to return
-    
-    Returns:
-        List of filtered offers with added 'match_score'
-    """
-    # STEP 1: Start with only offers that have meaningful tags/features
-    filtered = []
-    for offer in offers:
-        # Check if offer has meaningful tags (valid data check)
-        has_focus = offer.get('focus') and len([f for f in offer.get('focus', []) if f and f.strip()])
-        has_setting = offer.get('setting') and len([s for s in offer.get('setting', []) if s and s.strip()])
-        has_intensity = offer.get('intensity') and offer.get('intensity').strip()
-        
-        if not (has_focus or has_setting or has_intensity):
-            continue
-            
-        # Upcoming filter (hard filter)
-        if show_upcoming_only and offer.get('future_events_count', 0) == 0:
-            continue
-            
-        # Search filter (hard filter)
-        if search_text and search_text.lower() not in offer.get('name', '').lower():
-            continue
-            
-        filtered.append(offer)
-    
-    # STEP 2: Apply strict filters for intensity/focus/setting
-    # If ANY of these are selected, we do 100% match filtering
-    has_hard_filters = bool(intensity or focus or setting)
-    
-    if has_hard_filters:
-        # Strict filtering mode - must match ALL selected criteria
-        strict_filtered = []
-        
-        for offer in filtered:
-            matches = True
-            
-            # Intensity filter (must match if selected)
-            if intensity:
-                if offer.get('intensity') not in intensity:
-                    matches = False
-            
-            # Focus filter (must have ANY of the selected focus areas)
-            if focus and matches:
-                if not (offer.get('focus') and any(f in offer.get('focus', []) for f in focus)):
-                    matches = False
-            
-            # Setting filter (must have ANY of the selected settings)
-            if setting and matches:
-                if not (offer.get('setting') and any(s in offer.get('setting', []) for s in setting)):
-                    matches = False
-            
-            if matches:
-                offer['match_score'] = 100.0  # Perfect match
-                strict_filtered.append(offer)
-        
-        return strict_filtered[:max_results]
-    
-    else:
-        # No hard filters - use ML scoring for ranking
-        # Assign default score and return
-        for offer in filtered:
-            offer['match_score'] = 100.0
-        return filtered[:max_results]
-
-
-def filter_events(events, sport_filter=None, weekday_filter=None,
-                 date_start=None, date_end=None, time_start=None, time_end=None,
-                 location_filter=None, hide_cancelled=True):
-    """
-    Filter a list of events using our check_event_matches_filters function.
-    
-    PURPOSE: Apply all filters to a list of events
-    PATTERN: Loop through each event and check if it passes filters
-    
-    Args:
-        events: List of event dictionaries
-        Various filter parameters (see check_event_matches_filters for details)
-    
-    Returns:
-        List of filtered events
-    """
-    filtered = []
-    
-    # Check each event one by one
-    for event in events:
-        # Use our helper function to check if event matches
-        if check_event_matches_filters(
-            event, sport_filter, weekday_filter,
-            date_start, date_end, time_start, time_end,
-            location_filter, hide_cancelled
-        ):
-            filtered.append(event)
-    
-    return filtered
+# NOTE: Filter functions are now imported from utils.filters
+# - check_event_matches_filters()
+# - filter_offers()
+# - filter_events()
 
 # =============================================================================
 # PART 4: SIDEBAR COMPONENTS (UNIFIED VERSION)
@@ -529,40 +123,55 @@ def filter_events(events, sport_filter=None, weekday_filter=None,
 # STREAMLIT CONCEPT: st.sidebar creates a sidebar, session_state persists data
 # FOR BEGINNERS: Session state is KEY - it remembers user selections between reruns
 
-def create_user_info_card_html(user_name, user_email):
+# NOTE: create_user_info_card_html() is now imported from utils.formatting
+
+# =============================================================================
+# SESSION STATE INITIALIZATION
+# =============================================================================
+# BEST PRACTICE: Initialize all session state variables in one place
+# This ensures consistent state management and prevents KeyError issues
+def initialize_session_state():
     """
-    Create HTML for the user info card display.
+    Initialize all session state variables with default values.
     
-    PURPOSE: Show current logged-in user information
-    STREAMLIT CONCEPT: st.markdown with unsafe_allow_html=True lets us use custom HTML/CSS
-    FOR BEGINNERS: You can style Streamlit apps with HTML, but use it sparingly
+    STREAMLIT BEST PRACTICE:
+    ------------------------
+    Session state should be initialized in a dedicated function to:
+    1. Avoid KeyError when accessing state variables
+    2. Make it clear what state variables exist
+    3. Ensure consistent defaults across the app
+    4. Make testing easier
     
-    Args:
-        user_name: User's display name
-        user_email: User's email address
-    
-    Returns:
-        HTML string for rendering
+    This function should be called early in the app execution.
     """
-    return f"""
-    <div style="
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 12px;
-        margin-bottom: 16px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    ">
-        <div style="color: white; font-size: 14px; font-weight: 600; margin-bottom: 8px;">
-            👤 Signed in as
-        </div>
-        <div style="color: white; font-size: 16px; font-weight: 700; margin-bottom: 4px;">
-            {user_name}
-        </div>
-        <div style="color: rgba(255,255,255,0.8); font-size: 13px;">
-            {user_email}
-        </div>
-    </div>
-    """
+    # All session state keys are explicitly enumerated to ensure consistent
+    # state management. Missing keys can cause KeyError and inconsistent UI state.
+    # Centralizing defaults provides a single checklist when debugging.
+    defaults = {
+        # Filter states
+        'search_text': '',
+        'intensity': [],
+        'focus_areas': [],
+        'settings': [],
+        'selected_sport': None,
+        'selected_weekday': None,
+        'selected_location': None,
+        'selected_time': None,
+        'hide_cancelled': False,
+        'min_match_score': 0,
+        
+        # UI states
+        'show_activity_rating': False,
+        'show_trainer_rating': False,
+        
+        # Data states (will be populated from database)
+        'sports_data': None,
+    }
+    
+    # Only set defaults if key doesn't exist (preserve user selections)
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 
 def render_unified_sidebar(sports_data=None, events=None):
@@ -628,9 +237,20 @@ def render_unified_sidebar(sports_data=None, events=None):
         else:
             # === LOGGED IN: Show user profile card ===
             try:
-                user_name = st.user.name if hasattr(st, 'user') and st.user else "User"
-                user_email = st.user.email if hasattr(st, 'user') and st.user else ""
-                user_picture = st.user.picture if hasattr(st, 'user') and st.user and hasattr(st.user, 'picture') else None
+                if hasattr(st, 'user') and st.user:
+                    user_name = st.user.name
+                else:
+                    user_name = "User"
+                
+                if hasattr(st, 'user') and st.user:
+                    user_email = st.user.email
+                else:
+                    user_email = ""
+                
+                if hasattr(st, 'user') and st.user and hasattr(st.user, 'picture'):
+                    user_picture = st.user.picture
+                else:
+                    user_picture = None
             except Exception:
                 user_name = "User"
                 user_email = ""
@@ -646,7 +266,12 @@ def render_unified_sidebar(sports_data=None, events=None):
                         st.image(user_picture, width=60)
                     else:
                         # Create initials avatar
-                        initials = ''.join([word[0].upper() for word in user_name.split()[:2]])
+                        name_words = user_name.split()[:2]
+                        initials_list = []
+                        for word in name_words:
+                            if word:
+                                initials_list.append(word[0].upper())
+                        initials = ''.join(initials_list)
                         st.markdown(f"""
                         <div style="width: 60px; height: 60px; border-radius: 50%; 
                                     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -693,7 +318,7 @@ def render_unified_sidebar(sports_data=None, events=None):
         # =================================================================
         # LOAD DATA (immer laden, ohne Error Handling)
         # =================================================================
-        from db import get_offers_complete, get_events
+        from utils.db import get_offers_complete, get_events
 
         if sports_data is None:
             sports_data = st.session_state.get('sports_data')
@@ -783,194 +408,140 @@ def render_unified_sidebar(sports_data=None, events=None):
         # =================================================================
         # --- Location & Weekday Filters (TOP) ---
         with st.expander("📍 Location & Day", expanded=False):
-            # Location filter
-            locations = sorted(set([
-                e.get('location_name', '') 
-                for e in events 
-                if e.get('location_name')
-            ]))
+                # Location filter
+                locations = sorted(set([
+                    e.get('location_name', '') 
+                    for e in events 
+                    if e.get('location_name')
+                ]))
+                
+                selected_locations = st.multiselect(
+                    "📍 Location",
+                    options=locations,
+                    default=st.session_state.get('location', []),
+                    key="unified_location",
+                    help="Filter by location/venue"
+                )
+                st.session_state['location'] = selected_locations
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                # Weekday filter - use English names directly
+                weekday_options = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 
+                                  'Friday', 'Saturday', 'Sunday']
+                
+                selected_weekdays = st.multiselect(
+                    "📆 Weekday",
+                    options=weekday_options,
+                    default=st.session_state.get('weekday', []),
+                    key="unified_weekday",
+                    help="Filter by day of the week"
+                )
+                st.session_state['weekday'] = selected_weekdays
             
-            selected_locations = st.multiselect(
-                "📍 Location",
-                options=locations,
-                default=st.session_state.get('location', []),
-                key="unified_location",
-                help="Filter by location/venue"
-            )
-            st.session_state['location'] = selected_locations
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            # Weekday filter with German translations
-            weekdays_german = {
-                'Monday': 'Montag', 'Tuesday': 'Dienstag', 'Wednesday': 'Mittwoch',
-                'Thursday': 'Donnerstag', 'Friday': 'Freitag', 
-                'Saturday': 'Samstag', 'Sunday': 'Sonntag'
-            }
-            weekday_options = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 
-                              'Friday', 'Saturday', 'Sunday']
-            
-            selected_weekdays = st.multiselect(
-                "📆 Weekday",
-                options=weekday_options,
-                default=st.session_state.get('weekday', []),
-                format_func=lambda x: weekdays_german.get(x, x),
-                key="unified_weekday",
-                help="Filter by day of the week"
-            )
-            st.session_state['weekday'] = selected_weekdays
-        
         # --- Sport Filter ---
         with st.expander("🏃 Sport & Status", expanded=True):
-            # Get all unique sport names from events
-            sport_names = sorted(set([
-                e.get('sport_name', '') 
-                for e in events 
-                if e.get('sport_name')
-            ]))
+                # Get all unique sport names from events
+                sport_names = sorted(set([
+                    e.get('sport_name', '') 
+                    for e in events 
+                    if e.get('sport_name')
+                ]))
+                
+                # Check for pre-selected sports from Sports Overview tab
+                default_sports = []
+                selected_offer = st.session_state.get('selected_offer')
+                if selected_offer:
+                    selected_name = selected_offer.get('name', '')
+                    if selected_name and selected_name in sport_names:
+                        default_sports = [selected_name]
+                
+                selected_sports = st.multiselect(
+                    "Sport",
+                    options=sport_names,
+                    default=st.session_state.get('offers', default_sports),
+                    key="unified_sport"
+                )
+                st.session_state['offers'] = selected_sports
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                # --- Hide Cancelled Checkbox ---
+                hide_cancelled = st.checkbox(
+                    "🚫 Hide cancelled courses",
+                    value=st.session_state.get('hide_cancelled', True),
+                    key="unified_hide_cancelled"
+                )
+                st.session_state['hide_cancelled'] = hide_cancelled
             
-            # Check for pre-selected sports from Sports Overview tab
-            default_sports = []
-            selected_offer = st.session_state.get('selected_offer')
-            if selected_offer:
-                selected_name = selected_offer.get('name', '')
-                if selected_name and selected_name in sport_names:
-                    default_sports = [selected_name]
-            
-            selected_sports = st.multiselect(
-                "Sport",
-                options=sport_names,
-                default=st.session_state.get('offers', default_sports),
-                key="unified_sport"
-            )
-            st.session_state['offers'] = selected_sports
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            # --- Hide Cancelled Checkbox ---
-            hide_cancelled = st.checkbox(
-                "🚫 Hide cancelled courses",
-                value=st.session_state.get('hide_cancelled', True),
-                key="unified_hide_cancelled"
-            )
-            st.session_state['hide_cancelled'] = hide_cancelled
-        
         # --- Date & Time Filters ---
         with st.expander("📅 Date & Time", expanded=False):
-            st.markdown("**Date Range**")
-            
-            # Date range inputs (two columns)
-            col1, col2 = st.columns(2)
-            with col1:
-                start_date = st.date_input(
-                    "From",
-                    value=st.session_state.get('date_start', None),
-                    key="unified_start_date"
-                )
-                st.session_state['date_start'] = start_date
-            
-            with col2:
-                end_date = st.date_input(
-                    "To",
-                    value=st.session_state.get('date_end', None),
-                    key="unified_end_date"
-                )
-                st.session_state['date_end'] = end_date
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("**Time Range**")
-            
-            # Time range inputs (two columns)
-            col1, col2 = st.columns(2)
-            with col1:
-                start_time = st.time_input(
-                    "From",
-                    value=st.session_state.get('start_time', None),
-                    key="unified_start_time"
-                )
-                # Only store if not default midnight
-                if start_time != time(0, 0):
-                    st.session_state['start_time'] = start_time
-                else:
-                    st.session_state['start_time'] = None
-            
-            with col2:
-                end_time = st.time_input(
-                    "To",
-                    value=st.session_state.get('end_time', None),
-                    key="unified_end_time"
-                )
-                # Only store if not default midnight
-                if end_time != time(0, 0):
-                    st.session_state['end_time'] = end_time
-                else:
-                    st.session_state['end_time'] = None
+                st.markdown("**Date Range**")
+                
+                # Date range inputs (two columns)
+                col1, col2 = st.columns(2)
+                with col1:
+                    start_date = st.date_input(
+                        "From",
+                        value=st.session_state.get('date_start', None),
+                        key="unified_start_date"
+                    )
+                    st.session_state['date_start'] = start_date
+                
+                with col2:
+                    end_date = st.date_input(
+                        "To",
+                        value=st.session_state.get('date_end', None),
+                        key="unified_end_date"
+                    )
+                    st.session_state['date_end'] = end_date
+                
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("**Time Range**")
+                
+                # Time range inputs (two columns)
+                col1, col2 = st.columns(2)
+                with col1:
+                    start_time = st.time_input(
+                        "From",
+                        value=st.session_state.get('start_time', None),
+                        key="unified_start_time"
+                    )
+                    # Only store if not default midnight
+                    if start_time != time(0, 0):
+                        st.session_state['start_time'] = start_time
+                    else:
+                        st.session_state['start_time'] = None
+                
+                with col2:
+                    end_time = st.time_input(
+                        "To",
+                        value=st.session_state.get('end_time', None),
+                        key="unified_end_time"
+                    )
+                    # Only store if not default midnight
+                    if end_time != time(0, 0):
+                        st.session_state['end_time'] = end_time
+                    else:
+                        st.session_state['end_time'] = None
         
         # =================================================================
         # AI SETTINGS (immer anzeigen)
         # =================================================================
-        with st.expander("🤖 AI Settings", expanded=False):
-            min_match_score = st.slider(
-                "Minimum Match Score",
-                min_value=0,
-                max_value=100,
-                value=st.session_state.get('min_match_score', 0),
-                step=5,
-                key="unified_min_match",
-                help="Show activities that match at least this percentage of your preferences"
-            )
-            st.session_state['min_match_score'] = min_match_score
-            
-            max_results = st.number_input(
-                "Max Results",
-                min_value=5,
-                max_value=50,
-                value=st.session_state.get('max_results', 20),
-                step=5,
-                key="unified_max_results"
-            )
-            st.session_state['max_results'] = max_results
+        with st.expander("🤖 AI Recommendations Settings", expanded=False):
+                ml_min_match = st.slider(
+                    "Minimum Match %",
+                    min_value=20,
+                    max_value=100,
+                    value=st.session_state.get('ml_min_match', 50),
+                    step=5,
+                    key="ml_min_match_slider",
+                    help="Only show sports with at least this match percentage"
+                )
+                st.session_state['ml_min_match'] = ml_min_match
 
 
-def get_data_timestamp():
-    """
-    Get the timestamp of the last data update from database.
-    
-    PURPOSE: Show users when data was last refreshed
-    STREAMLIT CONCEPT: Query database to get ETL run timestamp
-    FOR BEGINNERS: This shows how to query a simple table
-    
-    Returns:
-        Formatted date/time string (Swiss format)
-    """
-    try:
-        client = get_supabase_client()
-        last_run = None
-        
-        if client is not None:
-            # Query the etl_runs table to get the most recent run
-            resp = (
-                client
-                .table("etl_runs")
-                .select("ran_at")
-                .order("ran_at", desc=True)
-                .limit(1)
-                .execute()
-            )
-            if resp.data:
-                last_run = resp.data[0].get("ran_at")
-        
-        if not last_run:
-            return "unknown"
-        
-        # Convert to Swiss timezone and format
-        dt = datetime.fromisoformat(str(last_run).replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=ZoneInfo("UTC"))
-        dt_swiss = dt.astimezone(ZoneInfo("Europe/Zurich"))
-        return dt_swiss.strftime("%d.%m.%Y %H:%M")
-    except Exception:
-        return "unknown"
+# NOTE: get_data_timestamp() is now imported from utils.db
 
 # =============================================================================
 # PART 5: MAIN APP - AUTHENTICATION & DATABASE CHECK
@@ -980,6 +551,12 @@ def get_data_timestamp():
 # FOR BEGINNERS: This section runs BEFORE the tabs
 # 
 # NOTE: User info section is now part of unified sidebar (no separate call needed)
+
+# =============================================================================
+# SESSION STATE INITIALIZATION
+# =============================================================================
+# BEST PRACTICE: Initialize session state early, before any UI rendering
+initialize_session_state()
 
 # =============================================================================
 # DATABASE CONNECTION CHECK
@@ -1045,6 +622,847 @@ if is_logged_in():
 render_unified_sidebar()
 
 # =============================================================================
+# ML RECOMMENDATIONS VISUALIZATION
+# =============================================================================
+# PURPOSE: Display AI-powered recommendations as a dedicated visualization section
+# STREAMLIT CONCEPT: This appears above all tabs, making it always visible
+# FOR BEGINNERS: This shows how to create interactive charts with Plotly
+
+# =============================================================================
+# ANALYTICS SECTION
+# =============================================================================
+# PURPOSE: Display analytics visualizations above the tabs
+# STREAMLIT CONCEPT: This appears above all tabs, making it always visible
+# FOR BEGINNERS: This shows how to create multiple charts in a grid layout
+
+def render_analytics_section():
+    """
+    Render analytics visualizations with AI recommendations and 6 charts.
+    
+    This function displays:
+    - AI-powered sport recommendations (if filters are selected)
+    - Kursverfügbarkeit nach Wochentag (Bar chart)
+    - Kursverfügbarkeit nach Tageszeit (Histogram)
+    - Kursverteilung nach Standort (Bar chart)
+    - Indoor vs. Outdoor (Pie chart)
+    - Intensitäts-Verteilung (Bar chart)
+    - Fokus-Verteilung (Bar chart)
+    """
+    from utils.db import (
+        get_events_by_weekday,
+        get_events_by_hour,
+        get_events_by_location,
+        get_events_by_location_type,
+        get_offers_by_intensity,
+        get_offers_by_focus,
+        get_offers_complete
+    )
+    
+    # Get filter state from session_state for AI recommendations
+    selected_focus = st.session_state.get('focus', [])
+    selected_intensity = st.session_state.get('intensity', [])
+    selected_setting = st.session_state.get('setting', [])
+    
+    # Check if any ML-relevant filters are selected
+    has_filters = bool(selected_focus or selected_intensity or selected_setting)
+    
+    # =========================================================================
+    # STATISTICS CHARTS SECTION
+    # =========================================================================
+    
+    # Get all analytics data
+    try:
+        weekday_data = get_events_by_weekday()
+        hour_data = get_events_by_hour()
+        location_data = get_events_by_location()
+        location_type_data = get_events_by_location_type()
+        intensity_data = get_offers_by_intensity()
+        focus_data = get_offers_by_focus()
+    except Exception as e:
+        st.warning(f"⚠️ Fehler beim Laden der Analytics-Daten: {e}")
+        return
+    
+    # Create 3 columns for the first row (3 charts)
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # 1. Kursverfügbarkeit nach Wochentag
+        if weekday_data:
+            weekdays = list(weekday_data.keys())
+            counts = list(weekday_data.values())
+            
+            fig = go.Figure(data=[
+                go.Bar(
+                    x=weekdays,
+                    y=counts,
+                    marker_color='#2E86AB',
+                    text=counts,
+                    textposition='auto',
+                )
+            ])
+            fig.update_layout(
+                title=dict(text="Course Availability by Weekday", x=0.5, xanchor='center', font=dict(size=18, family='Arial', color='#000000')),
+                xaxis_title="Weekday",
+                yaxis_title="Number of Courses",
+                height=300,
+                margin=dict(l=20, r=20, t=50, b=20),
+                paper_bgcolor='#FFFFFF',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(family='Inter, system-ui, sans-serif', size=12),
+                xaxis=dict(gridcolor='rgba(108, 117, 125, 0.1)', showgrid=True),
+                yaxis=dict(gridcolor='rgba(108, 117, 125, 0.1)', showgrid=True)
+            )
+            st.plotly_chart(fig, width="stretch")
+    
+    with col2:
+        # 2. Kursverfügbarkeit nach Tageszeit
+        if hour_data:
+            hours = list(hour_data.keys())
+            counts = list(hour_data.values())
+            
+            fig = go.Figure(data=[
+                go.Bar(
+                    x=hours,
+                    y=counts,
+                    marker_color='#F77F00',
+                    text=counts,
+                    textposition='auto',
+                )
+            ])
+            fig.update_layout(
+                title=dict(text="Course Availability by Time of Day", x=0.5, xanchor='center', font=dict(size=18, family='Arial', color='#000000')),
+                xaxis_title="Hour (0-23)",
+                yaxis_title="Number of Courses",
+                height=300,
+                margin=dict(l=20, r=20, t=50, b=20),
+                paper_bgcolor='#FFFFFF',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(family='Inter, system-ui, sans-serif', size=12),
+                xaxis=dict(tickmode='linear', tick0=0, dtick=2, gridcolor='rgba(108, 117, 125, 0.1)', showgrid=True),
+                yaxis=dict(gridcolor='rgba(108, 117, 125, 0.1)', showgrid=True)
+            )
+            st.plotly_chart(fig, width="stretch")
+    
+    with col3:
+        # 3. Indoor vs. Outdoor
+        if location_type_data:
+            types = list(location_type_data.keys())
+            counts = list(location_type_data.values())
+            
+            fig = go.Figure(data=[
+                go.Pie(
+                    labels=types,
+                    values=counts,
+                    marker_colors=['#2E86AB', '#06A77D', '#F77F00']
+                )
+            ])
+            fig.update_layout(
+                title=dict(text="Indoor vs. Outdoor", x=0.5, xanchor='center', font=dict(size=18, family='Arial', color='#000000')),
+                height=300,
+                margin=dict(l=20, r=20, t=50, b=20),
+                paper_bgcolor='#FFFFFF',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(family='Inter, system-ui, sans-serif', size=12)
+            )
+            st.plotly_chart(fig, width="stretch")
+    
+    # Create 3 columns for the second row (3 charts)
+    col4, col5, col6 = st.columns(3)
+    
+    with col4:
+        # 4. Kursverteilung nach Standort (Top 10)
+        if location_data:
+            # Get top 10 locations
+            top_locations = dict(list(location_data.items())[:10])
+            locations = list(top_locations.keys())
+            counts = list(top_locations.values())
+            
+            fig = go.Figure(data=[
+                go.Bar(
+                    x=counts,
+                    y=locations,
+                    orientation='h',
+                    marker_color='#FCBF49',
+                    text=counts,
+                    textposition='auto',
+                )
+            ])
+            fig.update_layout(
+                title=dict(text="Top 10 Locations", x=0.5, xanchor='center', font=dict(size=18, family='Arial', color='#000000')),
+                xaxis_title="Number of Courses",
+                yaxis_title="Location",
+                height=300,
+                margin=dict(l=20, r=20, t=50, b=20),
+                paper_bgcolor='#FFFFFF',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(family='Inter, system-ui, sans-serif', size=12),
+                xaxis=dict(gridcolor='rgba(108, 117, 125, 0.1)', showgrid=True),
+                yaxis=dict(gridcolor='rgba(108, 117, 125, 0.1)', showgrid=True)
+            )
+            st.plotly_chart(fig, width="stretch")
+    
+    with col5:
+        # 5. Intensitäts-Verteilung
+        if intensity_data:
+            intensities = list(intensity_data.keys())
+            counts = list(intensity_data.values())
+            
+            # Sort by intensity order
+            intensity_order = ['Low', 'Moderate', 'High']
+            # Create list of tuples for sorting
+            intensity_count_pairs = [(intensities[i], counts[i]) for i in range(len(intensities))]
+            
+            # Sort by intensity order using Python's sorted()
+            sorted_pairs = sorted(intensity_count_pairs, key=lambda x: intensity_order.index(x[0]) if x[0] in intensity_order else 999)
+            
+            # Extract sorted values
+            if sorted_pairs:
+                intensities_list = []
+                counts_list = []
+                for pair in sorted_pairs:
+                    intensities_list.append(pair[0])
+                    counts_list.append(pair[1])
+                intensities = intensities_list
+                counts = counts_list
+            else:
+                intensities = []
+                counts = []
+            
+            # Create gradient colors for intensity levels
+            intensity_colors = []
+            for intensity in intensities:
+                if intensity == 'Low':
+                    intensity_colors.append('#06A77D')
+                elif intensity == 'Moderate':
+                    intensity_colors.append('#FCBF49')
+                else:  # High
+                    intensity_colors.append('#D62828')
+            
+            fig = go.Figure(data=[
+                go.Bar(
+                    x=list(intensities),
+                    y=list(counts),
+                    marker_color=intensity_colors,
+                    text=list(counts),
+                    textposition='auto',
+                )
+            ])
+            fig.update_layout(
+                title=dict(text="Intensity Distribution", x=0.5, xanchor='center', font=dict(size=18, family='Arial', color='#000000')),
+                xaxis_title="Intensity",
+                yaxis_title="Number of Offers",
+                height=300,
+                margin=dict(l=20, r=20, t=50, b=20),
+                paper_bgcolor='#FFFFFF',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(family='Inter, system-ui, sans-serif', size=12),
+                xaxis=dict(gridcolor='rgba(108, 117, 125, 0.1)', showgrid=True),
+                yaxis=dict(gridcolor='rgba(108, 117, 125, 0.1)', showgrid=True)
+            )
+            st.plotly_chart(fig, width="stretch")
+    
+    with col6:
+        # 6. Fokus-Verteilung
+        if focus_data:
+            focus_areas = list(focus_data.keys())
+            counts = list(focus_data.values())
+            
+            fig = go.Figure(data=[
+                go.Bar(
+                    x=focus_areas,
+                    y=counts,
+                    marker_color='#2E86AB',
+                    text=counts,
+                    textposition='auto',
+                )
+            ])
+            fig.update_layout(
+                title=dict(text="Focus Distribution", x=0.5, xanchor='center', font=dict(size=18, family='Arial', color='#000000')),
+                xaxis_title="Focus Area",
+                yaxis_title="Number of Offers",
+                height=300,
+                margin=dict(l=20, r=20, t=50, b=20),
+                paper_bgcolor='#FFFFFF',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(family='Inter, system-ui, sans-serif', size=12),
+                xaxis=dict(tickangle=-45, gridcolor='rgba(108, 117, 125, 0.1)', showgrid=True),
+                yaxis=dict(gridcolor='rgba(108, 117, 125, 0.1)', showgrid=True)
+            )
+            st.plotly_chart(fig, width="stretch")
+    
+    # =========================================================================
+    # AI RECOMMENDATIONS SECTION (appears naturally after statistics if filters are selected)
+    # =========================================================================
+    if has_filters:
+        # Get sports data to exclude already-shown sports
+        try:
+            sports_data = st.session_state.get('sports_data')
+            if not sports_data:
+                sports_data = get_offers_complete()
+                st.session_state['sports_data'] = sports_data
+        except Exception:
+            st.warning("⚠️ Could not load sports data for recommendations")
+            sports_data = []
+        
+        if sports_data:
+            # Get current filtered results to exclude from recommendations
+            search_text = st.session_state.get('search_text', '')
+            show_upcoming_only = st.session_state.get('show_upcoming_only', True)
+            
+            current_filtered = filter_offers(
+                sports_data,
+                show_upcoming_only=show_upcoming_only,
+                search_text=search_text,
+                intensity=selected_intensity if selected_intensity else None,
+                focus=selected_focus if selected_focus else None,
+                setting=selected_setting if selected_setting else None,
+                min_match_score=0,
+                max_results=1000  # Get all filtered results
+            )
+            
+            # Get default settings from session state
+            min_match = st.session_state.get('ml_min_match', 50)
+            max_results = st.session_state.get('ml_max_results', 10)
+            
+            # Get ML recommendations with fallback logic (return ALL recommendations, even 100% matches)
+            with st.spinner("🤖 AI is analyzing sports..."):
+                recommendations = []
+                fallback_thresholds = [min_match, 40, 30, 20, 0]
+                
+                for threshold in fallback_thresholds:
+                    recommendations = get_ml_recommendations(
+                        selected_focus=selected_focus,
+                        selected_intensity=selected_intensity,
+                        selected_setting=selected_setting,
+                        min_match_score=threshold,
+                        max_results=max_results,
+                        exclude_sports=None  # Return all recommendations, even those already in filtered list
+                    )
+                    if recommendations:
+                        break
+            
+            # Show AI recommendations if available
+            if recommendations:
+                # Combine filtered results and ML recommendations for Top 3
+                all_offers_for_top3 = []
+                
+                # Add filtered results (they have match_score=100.0)
+                for offer in current_filtered:
+                    all_offers_for_top3.append({
+                        'name': offer.get('name'),
+                        'match_score': offer.get('match_score', 100.0),
+                        'offer': offer
+                    })
+                
+                # Add ML recommendations
+                for rec in recommendations:
+                    sport_name = rec['sport']
+                    match_score = rec['match_score']
+                    # Find full offer data
+                    matching_offer = None
+                    for offer in sports_data:
+                        if offer.get('name') == sport_name:
+                            matching_offer = offer
+                            break
+                    if matching_offer:
+                        all_offers_for_top3.append({
+                            'name': sport_name,
+                            'match_score': match_score,
+                            'offer': matching_offer
+                        })
+                
+                # Sort by match score (highest first) and get top 3
+                all_offers_for_top3 = sorted(all_offers_for_top3, key=lambda x: x['match_score'], reverse=True)
+                top3_combined = all_offers_for_top3[:3]
+                
+                # Calculate match scores for ALL sports using ML model
+                from utils.ml_utils import load_knn_model, build_user_preferences_from_filters, ML_FEATURE_COLUMNS
+                import numpy as np
+                
+                model_data = load_knn_model()
+                all_sports_scores = []
+                
+                if model_data:
+                    knn_model = model_data['knn_model']
+                    scaler = model_data['scaler']
+                    sports_df = model_data['sports_df']
+                    
+                    # Build user preferences from filters
+                    user_prefs = build_user_preferences_from_filters(
+                        selected_focus, selected_intensity, selected_setting
+                    )
+                    
+                    # Build feature vector
+                    feature_values = []
+                    for col in ML_FEATURE_COLUMNS:
+                        value = user_prefs.get(col, 0.0)
+                        feature_values.append(value)
+                    user_vector = np.array(feature_values)
+                    user_vector = user_vector.reshape(1, -1)
+                    
+                    # Scale
+                    user_vector_scaled = scaler.transform(user_vector)
+                    
+                    # Get all sports as neighbors
+                    n_sports = len(sports_df)
+                    distances, indices = knn_model.kneighbors(user_vector_scaled, n_neighbors=n_sports)
+                    
+                    # Calculate match scores for all sports
+                    for distance, idx in zip(distances[0], indices[0]):
+                        sport_name = sports_df.iloc[idx]['Angebot']
+                        match_score = (1 - distance) * 100
+                        
+                        # Find full offer data
+                        matching_offer = None
+                        for offer in sports_data:
+                            if offer.get('name') == sport_name:
+                                matching_offer = offer
+                                break
+                        
+                        if matching_offer:
+                            # Respect the show_upcoming_only filter (same as main list)
+                            if show_upcoming_only and matching_offer.get('future_events_count', 0) == 0:
+                                continue  # Skip sports without upcoming events if filter is enabled
+                            
+                            # Check if sport is in filtered list
+                            is_filtered = False
+                            for o in current_filtered:
+                                if o.get('name') == sport_name:
+                                    is_filtered = True
+                                    break
+                            
+                            all_sports_scores.append({
+                                'name': sport_name,
+                                'match_score': round(match_score, 1),
+                                'offer': matching_offer,
+                                'is_filtered': is_filtered
+                            })
+                else:
+                    # Fallback: if model not available, use filtered results only
+                    for offer in current_filtered:
+                        all_sports_scores.append({
+                            'name': offer.get('name'),
+                            'match_score': offer.get('match_score', 100.0),
+                            'offer': offer,
+                            'is_filtered': True
+                        })
+                
+                # Prepare data for chart - use all sports with scores
+                chart_data = all_sports_scores
+                
+                # Sort by match score (highest first)
+                chart_data = sorted(chart_data, key=lambda x: x['match_score'], reverse=True)
+                
+                # Limit to top 10 for the graph
+                chart_data_top10 = chart_data[:10]
+                
+                # Calculate average score for chart (using top 10)
+                if chart_data_top10:
+                    avg_score = sum(d['match_score'] for d in chart_data_top10) / len(chart_data_top10)
+                else:
+                    avg_score = 0
+                
+                # Create two columns: left for podest, right for graph
+                col_podest, col_graph = st.columns([1, 1])
+                
+                # Left column: Podest (Top 3 vertically) - compact version
+                with col_podest:
+                    # Add title above podest (consistent with graph titles)
+                    st.markdown("""
+                    <div style="text-align: center; margin-bottom: 15px;">
+                        <h3 style="color: #000000; font-family: Arial; font-size: 18px; margin: 0;">Top Recommendations</h3>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if len(top3_combined) >= 3:
+                        medals = ['🥇', '🥈', '🥉']
+                        
+                        # Create compact podest using Streamlit components
+                        for idx, top_item in enumerate(top3_combined):
+                            medal = medals[idx]
+                            offer = top_item['offer']
+                            sport_name = top_item['name']
+                            match_score = top_item['match_score']
+                            
+                            # Quality indicator with new color palette
+                            if match_score >= 90:
+                                quality_emoji = "🟢"
+                                quality_text = "Excellent"
+                                quality_color = "#06A77D"  # Teal
+                            elif match_score >= 65:
+                                quality_emoji = "🟠"
+                                quality_text = "Good"
+                                quality_color = "#FCBF49"  # Light orange
+                            else:
+                                quality_emoji = "🔴"
+                                quality_text = "Fair"
+                                quality_color = "#D62828"  # Warm red
+                            
+                            # Get additional features not in user's selection (simplified)
+                            additional_focus = []
+                            # Check if balance is not in selected focus
+                            balance_in_selected = False
+                            if selected_focus:
+                                for f in selected_focus:
+                                    if f.lower() == 'balance':
+                                        balance_in_selected = True
+                                        break
+                            if offer.get('balance') and not balance_in_selected:
+                                additional_focus.append('Balance')
+                            
+                            # Check if flexibility is not in selected focus
+                            flexibility_in_selected = False
+                            if selected_focus:
+                                for f in selected_focus:
+                                    if f.lower() == 'flexibility':
+                                        flexibility_in_selected = True
+                                        break
+                            if offer.get('flexibility') and not flexibility_in_selected:
+                                additional_focus.append('Flexibility')
+                            
+                            # Check if strength is not in selected focus
+                            strength_in_selected = False
+                            if selected_focus:
+                                for f in selected_focus:
+                                    if f.lower() == 'strength':
+                                        strength_in_selected = True
+                                        break
+                            if offer.get('strength') and not strength_in_selected:
+                                additional_focus.append('Strength')
+                            
+                            # Check if endurance is not in selected focus
+                            endurance_in_selected = False
+                            if selected_focus:
+                                for f in selected_focus:
+                                    if f.lower() == 'endurance':
+                                        endurance_in_selected = True
+                                        break
+                            if offer.get('endurance') and not endurance_in_selected:
+                                additional_focus.append('Endurance')
+                            
+                            additional_setting = []
+                            # Check if team is not in selected setting
+                            team_in_selected = False
+                            if selected_setting:
+                                for s in selected_setting:
+                                    if s.lower() == 'team':
+                                        team_in_selected = True
+                                        break
+                            if offer.get('setting_team') and not team_in_selected:
+                                additional_setting.append('Team')
+                            
+                            # Check if solo is not in selected setting
+                            solo_in_selected = False
+                            if selected_setting:
+                                for s in selected_setting:
+                                    if s.lower() == 'solo':
+                                        solo_in_selected = True
+                                        break
+                            if offer.get('setting_solo') and not solo_in_selected:
+                                additional_setting.append('Solo')
+                            
+                            # Build compact features text
+                            features_parts = []
+                            if additional_focus:
+                                features_parts.append(', '.join(additional_focus[:2]))
+                            if additional_setting:
+                                features_parts.append(', '.join(additional_setting[:2]))
+                            if features_parts:
+                                features_text = " | ".join(features_parts)
+                            else:
+                                features_text = "Matches preferences"
+                            
+                            # Compact container with minimal padding using custom CSS (no shadow, blends with graphs)
+                            st.markdown(f"""
+                            <div style="border: 1px solid rgba(108, 117, 125, 0.2); border-radius: 6px; padding: 8px; background: rgba(255,255,255,0.8); margin-bottom: 6px;">
+                                <div style="font-size: 18px; font-weight: bold; margin-bottom: 2px;">{medal}</div>
+                                <div style="font-size: 13px; font-weight: bold; margin-bottom: 2px;">{sport_name}</div>
+                                <div style="font-size: 15px; font-weight: bold; margin-bottom: 2px;"><span style="color: #2E86AB;">{match_score:.1f}%</span> <span style="color: {quality_color};">{quality_emoji} {quality_text}</span></div>
+                                <div style="font-size: 10px; color: #6C757D; line-height: 1.2;">{features_text}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                
+                # Right column: Graph (Top 10)
+                with col_graph:
+                    # Only show chart if data is available
+                    if not chart_data_top10:
+                        st.info("No recommendations to display in chart.")
+                    else:
+                        # Prepare data for chart (top 10)
+                        sport_names = []
+                        match_scores = []
+                        for d in chart_data_top10:
+                            sport_names.append(d['name'])
+                            match_scores.append(d['match_score'])
+                        
+                        # Ensure valid data is available
+                        has_sport_names = bool(sport_names)
+                        has_match_scores = bool(match_scores)
+                        lengths_match = len(sport_names) == len(match_scores)
+                        if not has_sport_names or not has_match_scores or not lengths_match:
+                            st.warning("Data mismatch in chart data.")
+                        else:
+                            # Build hover tooltips with additional features
+                            hover_texts = []
+                            for chart_item in chart_data_top10:
+                                offer = chart_item['offer']
+                                sport_name = chart_item['name']
+                                match_score = chart_item['match_score']
+                                
+                                # Get additional focus tags not in user's selection
+                                additional_focus = []
+                                focus_map = {
+                                    'balance': 'Balance',
+                                    'flexibility': 'Flexibility',
+                                    'coordination': 'Coordination',
+                                    'relaxation': 'Relaxation',
+                                    'strength': 'Strength',
+                                    'endurance': 'Endurance',
+                                    'longevity': 'Longevity'
+                                }
+                                
+                                for key, label in focus_map.items():
+                                    label_in_selected = False
+                                    if selected_focus:
+                                        for f in selected_focus:
+                                            if f.lower() == label.lower():
+                                                label_in_selected = True
+                                                break
+                                    if offer.get(key) and not label_in_selected:
+                                        additional_focus.append(label)
+                                
+                                # Get additional intensity if different
+                                additional_intensity = None
+                                offer_intensity_raw = offer.get('intensity')
+                                if offer_intensity_raw:
+                                    if isinstance(offer_intensity_raw, str):
+                                        offer_intensity = offer_intensity_raw.lower()
+                                    else:
+                                        offer_intensity = str(offer_intensity_raw).lower()
+                                    
+                                    intensity_in_selected = False
+                                    if selected_intensity:
+                                        for i in selected_intensity:
+                                            if i.lower() == offer_intensity:
+                                                intensity_in_selected = True
+                                                break
+                                    if offer_intensity and not intensity_in_selected:
+                                        additional_intensity = offer_intensity.capitalize()
+                                
+                                # Get additional setting tags not in user's selection
+                                additional_setting = []
+                                setting_map = {
+                                    'setting_team': 'Team',
+                                    'setting_fun': 'Fun',
+                                    'setting_duo': 'Duo',
+                                    'setting_solo': 'Solo',
+                                    'setting_competitive': 'Competitive'
+                                }
+                                
+                                for key, label in setting_map.items():
+                                    label_in_selected = False
+                                    if selected_setting:
+                                        for s in selected_setting:
+                                            if s.lower() == label.lower():
+                                                label_in_selected = True
+                                                break
+                                    if offer.get(key) and not label_in_selected:
+                                        additional_setting.append(label)
+                                
+                                # Build hover text
+                                hover_parts = [f"<b>{sport_name}</b>", f"Match: {match_score:.1f}%"]
+                                
+                                if additional_focus:
+                                    hover_parts.append(f"<br>Additional Focus: {', '.join(additional_focus[:3])}")
+                                if additional_intensity:
+                                    hover_parts.append(f"<br>Intensity: {additional_intensity}")
+                                if additional_setting:
+                                    hover_parts.append(f"<br>Additional Setting: {', '.join(additional_setting[:3])}")
+                                
+                                hover_texts.append("<br>".join(hover_parts))
+                            
+                            # Create beautiful horizontal bar chart
+                            fig = go.Figure()
+                            
+                            # Prepare data for horizontal bars
+                            display_names = []
+                            for name in sport_names:
+                                if len(name) > 30:
+                                    display_name = f"{name[:30]}..."
+                                else:
+                                    display_name = name
+                                display_names.append(display_name)
+                            
+                            # Create hover tooltips with additional sport features (only show NON-selected tags)
+                            recommendation_hover_tooltips = []
+                            for chart_item in chart_data_top10:
+                                offer = chart_item['offer']
+                                sport_name = chart_item['name']
+                                match_score = chart_item['match_score']
+                                is_filtered = chart_item.get('is_filtered', False)
+                                
+                                additional_feature_tags = []
+                                
+                                # Show NON-selected focus tags that this sport has
+                                focus_tag_names = ['balance', 'flexibility', 'coordination', 'relaxation', 'strength', 'endurance', 'longevity']
+                                for focus_tag in focus_tag_names:
+                                    focus_tag_in_selected = False
+                                    if selected_focus:
+                                        for f in selected_focus:
+                                            if f.lower() == focus_tag:
+                                                focus_tag_in_selected = True
+                                                break
+                                    if offer.get(focus_tag, 0) == 1 and not focus_tag_in_selected:
+                                        additional_feature_tags.append(f"🎯 {focus_tag.capitalize()}")
+                                
+                                # Show intensity if different from selected (handle both numeric and string values)
+                                sport_intensity = offer.get('intensity')
+                                if sport_intensity is not None:
+                                    # Convert numeric intensity to string
+                                    if isinstance(sport_intensity, (int, float)):
+                                        if sport_intensity <= 0.4:
+                                            intensity_level = "low"
+                                        elif sport_intensity <= 0.7:
+                                            intensity_level = "moderate"
+                                        else:
+                                            intensity_level = "high"
+                                    else:
+                                        intensity_level = str(sport_intensity).lower()
+                                    
+                                    # Check if this intensity is different from selected
+                                    intensity_in_selected = False
+                                    if selected_intensity:
+                                        for i in selected_intensity:
+                                            if i.lower() == intensity_level:
+                                                intensity_in_selected = True
+                                                break
+                                    if not selected_intensity or not intensity_in_selected:
+                                        additional_feature_tags.append(f"⚡ {intensity_level.capitalize()} Intensity")
+                                
+                                # Show NON-selected setting tags that this sport has
+                                setting_tag_names = ['setting_team', 'setting_fun', 'setting_duo', 'setting_solo', 'setting_competitive']
+                                for setting_tag in setting_tag_names:
+                                    if offer.get(setting_tag, 0) == 1:
+                                        setting_display_name = setting_tag.replace('setting_', '')
+                                        setting_in_selected = False
+                                        if selected_setting:
+                                            for s in selected_setting:
+                                                if s.lower() == setting_display_name:
+                                                    setting_in_selected = True
+                                                    break
+                                        if not setting_in_selected:
+                                            additional_feature_tags.append(f"🏃 {setting_display_name.capitalize()}")
+                                
+                                # Build hover text
+                                if additional_feature_tags:
+                                    tooltip_tags_text = "<br>".join(additional_feature_tags[:6])  # Limit to 6 tags for readability
+                                    recommendation_hover_tooltips.append(f"<b>{sport_name}</b><br>" +
+                                                      f"Match Score: <b>{match_score:.1f}%</b><br>" +
+                                                      f"<br><i>Additional Features:</i><br>{tooltip_tags_text}")
+                                else:
+                                    recommendation_hover_tooltips.append(f"<b>{sport_name}</b><br>" +
+                                                      f"Match Score: <b>{match_score:.1f}%</b><br>")
+                            
+                            # Add horizontal bars with gradient colors based on match scores
+                            bar_colors = []
+                            for item in chart_data_top10:
+                                bar_colors.append(item['match_score'])
+                            
+                            # Build text labels for bars
+                            text_labels = []
+                            for score in match_scores:
+                                text_labels.append(f"<b>{score:.1f}%</b>")
+                            
+                            fig.add_trace(go.Bar(
+                                y=display_names,
+                                x=match_scores,
+                                orientation='h',
+                                marker=dict(
+                                    color=bar_colors,
+                                    colorscale=[[0, '#D62828'], [0.5, '#FCBF49'], [1, '#06A77D']],  # Warm gradient: red -> orange -> teal
+                                    cmin=min(match_scores) if match_scores else 0,
+                                    cmax=max(match_scores) if match_scores else 100,
+                                    line=dict(color='rgba(255,255,255,0.8)', width=2),
+                                    opacity=0.85
+                                ),
+                                text=text_labels,
+                                textposition='inside',
+                                textfont=dict(color='white', size=12, family='Arial Black'),
+                                hovertemplate="%{customdata}<extra></extra>",
+                                customdata=recommendation_hover_tooltips,
+                                name="AI Recommendations"
+                            ))
+                            
+                            # Calculate dynamic range for x-axis
+                            if match_scores:
+                                min_score = min(match_scores)
+                                max_score = max(match_scores)
+                            else:
+                                min_score = 0
+                                max_score = 100
+                            range_min = max(0, (int(min_score) // 10) * 10 - 5)
+                            range_max = min(105, ((int(max_score) // 10) + 1) * 10 + 5)
+                            
+                            # Configure chart layout and styling
+                            fig.update_layout(
+                                title=dict(
+                                    text="Sports you might also like",
+                                    x=0.5,
+                                    xanchor='center',
+                                    font=dict(size=18, family='Arial', color='#000000')
+                                ),
+                                xaxis=dict(
+                                    title="Match Score (%)",
+                                    range=[range_min, range_max],
+                                    gridcolor='rgba(108, 117, 125, 0.1)',
+                                    showgrid=True,
+                                    tickfont=dict(size=12, color='#666')
+                                ),
+                                yaxis=dict(
+                                    title="Recommended Sports",
+                                    tickfont=dict(size=11, color='#666'),
+                                    autorange='reversed',  # Show highest scores at top
+                                    gridcolor='rgba(108, 117, 125, 0.1)',
+                                    showgrid=True
+                                ),
+                                height=max(400, len(chart_data_top10) * 35),
+                                margin=dict(l=30, r=30, t=70, b=30),
+                                paper_bgcolor='#FFFFFF',
+                                plot_bgcolor='rgba(0,0,0,0)',
+                                showlegend=False,
+                                font=dict(family='Inter, system-ui, sans-serif')
+                            )
+                            
+                            # Add average line
+                            fig.add_vline(
+                                x=avg_score,
+                                line_dash="dash",
+                                line_color="#F77F00",
+                                line_width=2,
+                                annotation_text=f"Avg. {avg_score:.1f}%",
+                                annotation_position="top",
+                                annotation_font_color="#F77F00",
+                                annotation_font_size=11
+                            )
+                            
+                            # Display chart with key based on filter values to ensure updates on filter changes
+                            filter_key = f"ai_recommendations_{hash(tuple(sorted(selected_focus or [])))}_{hash(tuple(sorted(selected_intensity or [])))}_{hash(tuple(sorted(selected_setting or [])))}"
+                            st.plotly_chart(fig, width="stretch", key=filter_key)
+            else:
+                # Show helpful message when no recommendations found
+                # First check if model was loaded successfully
+                from utils.ml_utils import load_knn_model
+                model_data = load_knn_model()
+                if model_data is None:
+                    st.warning("⚠️ **KI-Empfehlungen**: Das ML-Modell konnte nicht geladen werden. Bitte stellen Sie sicher, dass das Modell trainiert wurde (führen Sie `ml/train.py` aus).")
+                else:
+                    st.info(f"🤖 **KI-Empfehlungen**: Keine Empfehlungen gefunden mit einem Match-Score ≥ {min_match}%. Versuchen Sie, den Mindest-Match-Score zu senken oder andere Filter auszuwählen.")
+
+# Call the function to render analytics inside an expander (open by default)
+with st.expander("Analytics", expanded=True):
+    render_analytics_section()
+
+# =============================================================================
 # CREATE TABS
 # =============================================================================
 # STREAMLIT CONCEPT:
@@ -1053,7 +1471,7 @@ render_unified_sidebar()
 #
 # LIMITATION:
 #     st.tabs() does not support programmatic tab switching. When a user
-#     clicks a button, we cannot directly activate another tab.
+#     clicks a button, tabs cannot be switched programmatically.
 #
 # PRACTICAL WORKAROUND:
 #     - Store the selected offer in st.session_state when "View Details"
@@ -1064,7 +1482,7 @@ render_unified_sidebar()
 tab_overview, tab_details, tab_athletes, tab_profile, tab_about = st.tabs([
     "🎯 Sports Overview",
     "📅 Course Dates",
-    "👥 Athletes & Friends",
+    "👥 Athletes",
     "⚙️ My Profile",
     "ℹ️ About"
 ])
@@ -1080,7 +1498,7 @@ tab_overview, tab_details, tab_athletes, tab_profile, tab_about = st.tabs([
 
 with tab_overview:
     # Import database functions
-    from db import get_offers_complete, get_events
+    from utils.db import get_offers_complete, get_events
     
     # =========================================================================
     # LOAD DATA
@@ -1116,7 +1534,7 @@ with tab_overview:
     # 1. Streamlit reruns the ENTIRE script on every interaction
     # 2. Widget values are ephemeral - they reset without session_state
     # 3. When switching tabs, all widgets are recreated from scratch
-    # 4. We need to SHARE filter values between sidebar and tab content
+    # 4. Filter values must be SHARED between sidebar and tab content
     # 5. Without session_state, filters would reset every time you interact
     # 
     # EXAMPLE: User selects "strength" focus → clicks tab → without session_state,
@@ -1143,6 +1561,7 @@ with tab_overview:
     # APPLY FILTERS TO OFFERS
     # =========================================================================
     # Use our filter_offers function to get matching activities
+    # Never limit results - show all matching activities
     offers = filter_offers(
         offers_data,
         show_upcoming_only=show_upcoming_only,
@@ -1151,14 +1570,113 @@ with tab_overview:
         focus=selected_focus if selected_focus else None,
         setting=selected_setting if selected_setting else None,
         min_match_score=st.session_state.get('min_match_score', 0),
-        max_results=st.session_state.get('max_results', 20)
+        max_results=100000  # Effectively unlimited - show all results
     )
     
     # =========================================================================
-    # PAGE HEADER
+    # ADD ML RECOMMENDATIONS TO THE LIST
     # =========================================================================
-    st.title("🎯 Sports Overview")
-    st.write("Discover and book your perfect sports activities")
+    # If filters are selected, get ML recommendations and add them to the list
+    has_filters = bool(selected_focus or selected_intensity or selected_setting)
+    if has_filters:
+        # Get ML recommendations
+        min_match = st.session_state.get('ml_min_match', 50)
+        max_results = st.session_state.get('ml_max_results', 10)
+        
+        # Get names of already displayed offers (to avoid duplicates)
+        existing_offer_names = {offer.get('name') for offer in offers}
+        
+        # Calculate match scores for ALL sports using ML model (same as graph)
+        # This ensures the list shows the same sports as the graph
+        from utils.ml_utils import load_knn_model, build_user_preferences_from_filters, ML_FEATURE_COLUMNS
+        import numpy as np
+        
+        model_data = load_knn_model()
+        all_sports_scores = []
+        
+        if model_data:
+            knn_model = model_data['knn_model']
+            scaler = model_data['scaler']
+            sports_df = model_data['sports_df']
+            
+            # Build user preferences from filters
+            user_prefs = build_user_preferences_from_filters(
+                selected_focus, selected_intensity, selected_setting
+            )
+            
+            # Build feature vector using list comprehension
+            feature_values = [user_prefs.get(col, 0.0) for col in ML_FEATURE_COLUMNS]
+            user_vector = np.array(feature_values)
+            user_vector = user_vector.reshape(1, -1)
+            
+            # Scale
+            user_vector_scaled = scaler.transform(user_vector)
+            
+            # Get all sports as neighbors
+            n_sports = len(sports_df)
+            distances, indices = knn_model.kneighbors(user_vector_scaled, n_neighbors=n_sports)
+            
+            # Calculate match scores for all sports
+            for distance, idx in zip(distances[0], indices[0]):
+                sport_name = sports_df.iloc[idx]['Angebot']
+                match_score = (1 - distance) * 100
+                
+                # Find full offer data
+                matching_offer = None
+                for offer in offers_data:
+                    if offer.get('name') == sport_name:
+                        matching_offer = offer.copy()
+                        break
+                
+                if matching_offer:
+                    all_sports_scores.append({
+                        'name': sport_name,
+                        'match_score': round(match_score, 1),
+                        'offer': matching_offer
+                    })
+        
+        # Sort by match score and get top recommendations (same as graph)
+        all_sports_scores = sorted(all_sports_scores, key=lambda x: x['match_score'], reverse=True)
+        # Filter by min_match_score before limiting to max_results
+        filtered_scores = []
+        for rec in all_sports_scores:
+            if rec['match_score'] >= min_match:
+                filtered_scores.append(rec)
+        if filtered_scores:
+            top_ml_recommendations = filtered_scores[:max_results]
+        else:
+            top_ml_recommendations = []
+        
+        # Add ML recommendations to the offers list
+        # Respect the show_upcoming_only filter from session state
+        for rec in top_ml_recommendations:
+            sport_name = rec['name']
+            match_score = rec['match_score']
+            matching_offer = rec['offer']
+            
+            # Respect the show_upcoming_only filter
+            if show_upcoming_only and matching_offer.get('future_events_count', 0) == 0:
+                continue  # Skip sports without upcoming events if filter is enabled
+            
+            # Check if already in the list
+            if sport_name not in existing_offer_names:
+                # Not in list yet - add it with ML match score
+                matching_offer['match_score'] = match_score
+                matching_offer['is_ml_recommendation'] = True
+                offers.append(matching_offer)
+                existing_offer_names.add(sport_name)
+            else:
+                # Already in list - update match score if ML score is higher
+                # This ensures ML recommendations get proper scoring even if they match filters
+                for existing_offer in offers:
+                    if existing_offer.get('name') == sport_name:
+                        # Update with ML match score (which may be more accurate than filter score)
+                        existing_offer['match_score'] = match_score
+                        existing_offer['is_ml_recommendation'] = True
+                        break
+    
+    # Sort offers by match score (highest first) so ML recommendations appear at the top
+    offers = sorted(offers, key=lambda x: x.get('match_score', 0), reverse=True)
     
     # Show toast notification if user just clicked "View Details"
     if st.session_state.get('show_details_hint'):
@@ -1170,208 +1688,218 @@ with tab_overview:
     # DISPLAY MATCHING ACTIVITIES
     # =========================================================================
     if offers:
-        st.subheader(f"📋 Matching Activities ({len(offers)})")
-        
         # Loop through each matching offer
         for offer in offers:
-            # STREAMLIT CONCEPT: st.container(border=True) creates a card-like visual
-            with st.container(border=True):
-                # Create two columns: content (wide) and action button (narrow)
-                col_content, col_action = st.columns([4, 1])
+            # Load and filter events to get accurate count (needed for expander label)
+            events = get_events(offer_href=offer['href'])
+            today = datetime.now().date()
+            upcoming_events = []
+            for e in events:
+                event_date = datetime.fromisoformat(
+                    str(e.get('start_time')).replace('Z', '+00:00')
+                ).date()
+                if event_date >= today and not e.get('canceled'):
+                    upcoming_events.append(e)
+            
+            # Apply detail filters if any are set
+            has_offer_filter = bool(selected_offers_filter)
+            has_weekday_filter = bool(selected_weekdays)
+            has_date_start = date_start is not None
+            has_date_end = date_end is not None
+            has_time_start = time_start_filter is not None
+            has_time_end = time_end_filter is not None
+            has_location_filter = bool(selected_locations)
+            has_any_filter = (has_offer_filter or has_weekday_filter or has_date_start or 
+                           has_date_end or has_time_start or has_time_end or has_location_filter)
+            if has_any_filter:
+                upcoming_events = filter_events(
+                    upcoming_events,
+                    sport_filter=selected_offers_filter or None,
+                    weekday_filter=selected_weekdays or None,
+                    date_start=date_start,
+                    date_end=date_end,
+                    time_start=time_start_filter,
+                    time_end=time_end_filter,
+                    location_filter=selected_locations or None,
+                    hide_cancelled=hide_cancelled
+                )
+            
+            filtered_count = len(upcoming_events)
+            
+            # Match score badge (for expander label)
+            match_score = offer.get('match_score', 0)
+            if match_score >= 90:
+                score_badge_style = 'background-color: #dcfce7; color: #166534;'
+            elif match_score >= 70:
+                score_badge_style = 'background-color: #fef9c3; color: #854d0e;'
+            else:
+                score_badge_style = 'background-color: #f3f4f6; color: #374151;'
+            
+            # Create expander label with title and match score (without count)
+            icon = offer.get('icon', '🏃')
+            name = offer.get('name', 'Activity')
+            expander_label = f"{icon} {name} • {match_score:.0f}% Match"
+            
+            # STREAMLIT CONCEPT: st.expander makes the whole card expandable
+            with st.expander(expander_label, expanded=False):
+                # Compact metadata display using DataFrame table
+                # Prepare data
+                intensity_value = offer.get('intensity') or ''
+                if intensity_value:
+                    intensity = intensity_value.capitalize()
+                else:
+                    intensity = 'N/A'
+                if intensity != 'N/A':
+                    color_map = {'Low': '🟢', 'Medium': '🟡', 'High': '🔴'}
+                    color_emoji = color_map.get(intensity, '⚪')
+                    intensity_display = f"{color_emoji} {intensity}"
+                else:
+                    intensity_display = "N/A"
                 
-                # LEFT COLUMN: Activity information
-                with col_content:
-                    # Activity name with icon
-                    icon = offer.get('icon', '🏃')
-                    name = offer.get('name', 'Activity')
-                    
-                    # Match score badge
-                    match_score = offer.get('match_score', 0)
-                    if match_score >= 90:
-                        score_badge = f" <span style='background-color: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; font-weight: bold;'>{match_score:.0f}% Match</span>"
-                    elif match_score >= 70:
-                        score_badge = f" <span style='background-color: #fef9c3; color: #854d0e; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; font-weight: bold;'>{match_score:.0f}% Match</span>"
-                    else:
-                        score_badge = f" <span style='background-color: #f3f4f6; color: #374151; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; font-weight: bold;'>{match_score:.0f}% Match</span>"
-                    
-                    st.markdown(f"### {icon} {name} {score_badge}", unsafe_allow_html=True)
-                    
-                    # Build metadata row (intensity, focus, setting, events)
-                    metadata_parts = []
-                    
-                    # Intensity badge with color
-                    intensity_value = offer.get('intensity') or ''
-                    intensity = intensity_value.capitalize() if intensity_value else ''
-                    if intensity:
-                        # Map intensity to colored emoji
-                        color_map = {'Low': '🟢', 'Medium': '🟡', 'High': '🔴'}
-                        color_emoji = color_map.get(intensity, '⚪')
-                        metadata_parts.append(f"{color_emoji} {intensity}")
-                    
-                    # Focus areas (show first 2, indicate if more)
-                    if offer.get('focus'):
-                        # Get focus list and capitalize, filter empty strings
-                        focus_list = [f.capitalize() for f in offer['focus'][:2] if f]
-                        # If more than 2 focus areas, show count
-                        if len(offer['focus']) > 2:
-                            focus_list.append(f"+{len(offer['focus']) - 2}")
-                        metadata_parts.append(f"🎯 {', '.join(focus_list)}")
-                    
-                    # Settings (indoor/outdoor, etc.)
-                    if offer.get('setting'):
-                        setting_list = [s.capitalize() for s in offer['setting'][:2] if s]
-                        metadata_parts.append(f"🏠 {', '.join(setting_list)}")
-                    
-                    # Load and filter events to get accurate count after all filters
-                    events = get_events(offer_href=offer['href'])
-                    
-                    # Filter for future events only
-                    today = datetime.now().date()
-                    upcoming_events = []
-                    for e in events:
-                        event_date = datetime.fromisoformat(
-                            str(e.get('start_time')).replace('Z', '+00:00')
-                        ).date()
-                        # Include if future and not cancelled
-                        if event_date >= today and not e.get('canceled'):
-                            upcoming_events.append(e)
-                    
-                    # Apply detail filters if any are set
-                    if (selected_offers_filter or selected_weekdays or date_start or 
-                        date_end or time_start_filter or time_end_filter or selected_locations):
-                        upcoming_events = filter_events(
-                            upcoming_events,
-                            sport_filter=selected_offers_filter or None,
-                            weekday_filter=selected_weekdays or None,
-                            date_start=date_start,
-                            date_end=date_end,
-                            time_start=time_start_filter,
-                            time_end=time_end_filter,
-                            location_filter=selected_locations or None,
-                            hide_cancelled=hide_cancelled
-                        )
-                    
-                    # Use filtered count instead of static future_events_count
-                    filtered_count = len(upcoming_events)
-                    
-                    # Event count (now using filtered count)
-                    if filtered_count > 0:
-                        metadata_parts.append(f"📅 {filtered_count} upcoming")
-                    else:
-                        metadata_parts.append("⏸️ No upcoming dates")
-                    
-                    # Display metadata row
-                    st.caption(' • '.join(metadata_parts))
-                    
-                    # Additional info row (trainers and ratings)
-                    info_parts = []
-                    
-                    # Trainers (show first 2)
-                    trainers = offer.get('trainers', [])
-                    if trainers:
-                        trainer_names = [t.get('name', '') for t in trainers[:2]]
-                        if len(trainers) > 2:
-                            trainer_names.append(f"+{len(trainers)-2}")
-                        info_parts.append(f"👤 {', '.join(trainer_names)}")
-                    
-                    # Rating
-                    if offer.get('rating_count', 0) > 0:
-                        rating = offer.get('avg_rating', 0)
-                        stars = '⭐' * int(round(rating))
-                        info_parts.append(f"{stars} {rating:.1f} ({offer['rating_count']})")
-                    
-                    if info_parts:
-                        st.caption(' • '.join(info_parts))
+                focus_display = "N/A"
+                if offer.get('focus'):
+                    focus_list = []
+                    focus_items = offer['focus'][:2]
+                    for f in focus_items:
+                        if f:
+                            focus_list.append(f.capitalize())
+                    if len(offer['focus']) > 2:
+                        focus_list.append(f"+{len(offer['focus']) - 2}")
+                    focus_display = ', '.join(focus_list)
                 
-                # RIGHT COLUMN: Action button
-                with col_action:
-                    st.write("")  # Spacing
-                    # Button to view details
-                    button_key = f"view_{offer['href']}"
-                    if st.button("View Details", key=button_key, use_container_width=True, type="primary"):
-                        # Store selected offer in session state so the details tab
-                        # can pick it up and render the corresponding course dates.
-                        st.session_state['selected_offer'] = offer
-                        st.session_state['show_details_hint'] = True  # Flag to show hint
+                setting_display = "N/A"
+                if offer.get('setting'):
+                    setting_list = []
+                    setting_items = offer['setting'][:2]
+                    for s in setting_items:
+                        if s:
+                            setting_list.append(s.capitalize())
+                    setting_display = ', '.join(setting_list)
                 
-                # EXPANDABLE SECTION: Show upcoming dates
+                trainers_display = "N/A"
+                trainers = offer.get('trainers', [])
+                if trainers:
+                    trainer_names = []
+                    trainer_items = trainers[:2]
+                    for t in trainer_items:
+                        trainer_name = t.get('name', '')
+                        if trainer_name:
+                            trainer_names.append(trainer_name)
+                    if len(trainers) > 2:
+                        trainer_names.append(f"+{len(trainers)-2}")
+                    trainers_display = ', '.join(trainer_names)
+                
+                rating_display = "No reviews"
+                if offer.get('rating_count', 0) > 0:
+                    rating = offer.get('avg_rating', 0)
+                    rating_display = f"{rating:.1f} ({offer['rating_count']})"
+                
+                # Create DataFrame with single row
+                metadata_df = pd.DataFrame({
+                    'Match': [f"{match_score:.0f}%"],
+                    'Intensity': [intensity_display],
+                    'Focus': [focus_display],
+                    'Setting': [setting_display],
+                    'Upcoming': [filtered_count if filtered_count > 0 else 0],
+                    'Trainers': [trainers_display],
+                    'Rating': [rating_display]
+                })
+                
+                # Display as compact table
+                st.dataframe(
+                    metadata_df,
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                # Show upcoming dates (now directly in the expander, no nested expander)
                 if filtered_count > 0:
+                    st.divider()
+                    st.subheader(f"Upcoming Dates ({filtered_count})")
                     
-                    with st.expander(f"📅 Show {filtered_count} upcoming date{'s' if filtered_count != 1 else ''}", expanded=False):
+                    # Sort by start time (events are already filtered above)
+                    upcoming_events = sorted(upcoming_events, key=lambda x: x.get('start_time', ''))
+                    
+                    if upcoming_events:
+                        # English weekday abbreviations
+                        weekdays = {
+                            'Monday': 'Mon', 'Tuesday': 'Tue', 'Wednesday': 'Wed',
+                            'Thursday': 'Thu', 'Friday': 'Fri', 'Saturday': 'Sat', 'Sunday': 'Sun'
+                        }
                         
-                        # Sort by start time (events are already filtered above)
-                        upcoming_events.sort(key=lambda x: x.get('start_time', ''))
-                        
-                        if upcoming_events:
-                            # German weekday abbreviations
-                            weekdays = {
-                                'Monday': 'Mo', 'Tuesday': 'Di', 'Wednesday': 'Mi',
-                                'Thursday': 'Do', 'Friday': 'Fr', 'Saturday': 'Sa', 'Sunday': 'So'
-                            }
-                            
-                            # Build table data
-                            events_table_data = []
-                            for event in upcoming_events[:10]:  # Show max 10
-                                start_dt = datetime.fromisoformat(
-                                    str(event.get('start_time')).replace('Z', '+00:00')
-                                )
-                                
-                                # Format time range
-                                end_time = event.get('end_time')
-                                if end_time:
-                                    end_dt = datetime.fromisoformat(str(end_time).replace('Z', '+00:00'))
-                                    time_str = f"{start_dt.strftime('%H:%M')} - {end_dt.strftime('%H:%M')}"
-                                else:
-                                    time_str = start_dt.strftime('%H:%M')
-                                
-                                # Get weekday abbreviation
-                                weekday = weekdays.get(start_dt.strftime('%A'), start_dt.strftime('%A'))
-                                
-                                events_table_data.append({
-                                    'date': start_dt.date(),
-                                    'time': time(start_dt.hour, start_dt.minute),
-                                    'weekday': weekday,
-                                    'location': event.get('location_name', 'N/A')
-                                })
-                            
-                            # Display as dataframe with column config
-                            st.dataframe(
-                                events_table_data,
-                                use_container_width=True,
-                                hide_index=True,
-                                column_config={
-                                    "date": st.column_config.DateColumn(
-                                        "Date",
-                                        format="DD.MM.YYYY",
-                                    ),
-                                    "time": st.column_config.TimeColumn(
-                                        "Time",
-                                        format="HH:mm",
-                                    ),
-                                    "weekday": "Day",
-                                    "location": "Location"
-                                }
+                        # Build table data
+                        events_table_data = []
+                        for event in upcoming_events[:10]:  # Show max 10
+                            start_dt = datetime.fromisoformat(
+                                str(event.get('start_time')).replace('Z', '+00:00')
                             )
                             
-                            # If more than 10 events, show button to view all
-                            if len(upcoming_events) > 10:
-                                if st.button(
-                                    f"View all {len(upcoming_events)} dates →",
-                                    key=f"all_dates_{offer['href']}",
-                                    use_container_width=True
-                                ):
-                                    # Store offer and show hint (user must manually switch tabs)
-                                    st.session_state['selected_offer'] = offer
-                                    st.session_state['show_details_hint'] = True
+                            # Format time range
+                            end_time = event.get('end_time')
+                            if end_time:
+                                end_time_str = str(end_time)
+                                end_time_clean = end_time_str.replace('Z', '+00:00')
+                                end_dt = datetime.fromisoformat(end_time_clean)
+                                time_str = f"{start_dt.strftime('%H:%M')} - {end_dt.strftime('%H:%M')}"
+                            else:
+                                time_str = start_dt.strftime('%H:%M')
+                            
+                            # Get weekday abbreviation
+                            weekday = weekdays.get(start_dt.strftime('%A'), start_dt.strftime('%A'))
+                            
+                            events_table_data.append({
+                                'date': start_dt.date(),
+                                'time': time(start_dt.hour, start_dt.minute),
+                                'weekday': weekday,
+                                'location': event.get('location_name', 'N/A')
+                            })
+                        
+                        # Display as dataframe with column config
+                        st.dataframe(
+                            events_table_data,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "date": st.column_config.DateColumn(
+                                    "Date",
+                                    format="DD.MM.YYYY",
+                                ),
+                                "time": st.column_config.TimeColumn(
+                                    "Time",
+                                    format="HH:mm",
+                                ),
+                                "weekday": "Day",
+                                "location": "Location"
+                            }
+                        )
+                        
+                        # Button to view all dates (replaces the red "View Details" button)
+                        if len(upcoming_events) > 10:
+                            if st.button(
+                                f"View all {len(upcoming_events)} dates →",
+                                key=f"all_dates_{offer['href']}",
+                                use_container_width=True,
+                                type="primary"
+                            ):
+                                # Store selected offer in session state so the details tab
+                                # can pick it up and render the corresponding course dates.
+                                st.session_state['selected_offer'] = offer
+                                st.session_state['show_details_hint'] = True  # Flag to show hint
                         else:
-                            st.info("No upcoming dates match your filters")
+                            # Even if 10 or fewer, show button to view in details tab
+                            if st.button(
+                                f"View all {len(upcoming_events)} dates in details →",
+                                key=f"view_details_{offer['href']}",
+                                use_container_width=True,
+                                type="primary"
+                            ):
+                                st.session_state['selected_offer'] = offer
+                                st.session_state['show_details_hint'] = True
+                    else:
+                        st.info("No upcoming dates match your filters")
     else:
         st.info("🔍 No activities found matching your filters.")
         st.caption("Try adjusting your search or filters in the sidebar.")
-    
-    # Empty state footer
-    if len(offers) == 0:
-        st.info("💡 **Tip:** Try clearing some filters to see more activities")
 
 # =============================================================================
 # PART 7: TAB 2 - COURSE DATES
@@ -1382,12 +1910,12 @@ with tab_overview:
 
 with tab_details:
     # Import necessary functions
-    from db import (
+    from utils.db import (
         get_events,
         get_user_id_by_sub,
         get_offers_complete
     )
-    from rating import (
+    from utils.rating import (
         render_sportangebot_rating_widget,
         render_trainer_rating_widget,
         get_average_rating_for_offer,
@@ -1404,16 +1932,7 @@ with tab_details:
     # =========================================================================
     # PAGE HEADER
     # =========================================================================
-    if not selected:
-        # Showing all course dates
-        st.title("📅 Course Dates")
-        st.caption("All upcoming course dates")
-    else:
-        # Showing dates for specific activity
-        icon = selected.get('icon', '🏃')
-        name = selected.get('name', 'Sports Activity')
-        st.title(f"{icon} {name}")
-        st.caption("View upcoming course dates")
+    # No header text - cleaner design
     
     # =========================================================================
     # ACTIVITY INFO SECTION (only for single activity view)
@@ -1425,41 +1944,125 @@ with tab_details:
             with st.expander("📖 Activity Description", expanded=False):
                 st.markdown(description, unsafe_allow_html=True)
         
-        # Metrics in clean columns (ohne abgeschnittene Texte)
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            intensity = (selected.get('intensity') or 'N/A').capitalize()
+        # Compact metadata display using DataFrame table (same style as activity cards)
+        intensity_value = selected.get('intensity') or ''
+        intensity = intensity_value.capitalize() if intensity_value else 'N/A'
+        if intensity != 'N/A':
             color_map = {'Low': '🟢', 'Medium': '🟡', 'High': '🔴'}
-            intensity_icon = color_map.get(intensity, '⚪')
-            st.caption("Intensity")
-            st.markdown(f"**{intensity_icon} {intensity}**")
+            color_emoji = color_map.get(intensity, '⚪')
+            intensity_display = f"{color_emoji} {intensity}"
+        else:
+            intensity_display = "N/A"
         
-        with col2:
-            # Show first 2 focus areas
-            focus = ', '.join([f.capitalize() for f in selected.get('focus', [])][:2])
+        focus_display = "N/A"
+        if selected.get('focus'):
+            focus_list = []
+            focus_items = selected.get('focus', [])[:2]
+            for f in focus_items:
+                if f:
+                    focus_list.append(f.capitalize())
             if len(selected.get('focus', [])) > 2:
-                focus += '...'
-            st.caption("Focus")
-            st.markdown(f"**{focus or 'N/A'}**")
+                focus_list.append(f"+{len(selected.get('focus', [])) - 2}")
+            focus_display = ', '.join(focus_list)
         
-        with col3:
-            # Show first 2 settings
-            setting = ', '.join([s.capitalize() for s in selected.get('setting', [])][:2])
-            st.caption("Setting")
-            st.markdown(f"**{setting or 'N/A'}**")
+        setting_display = "N/A"
+        if selected.get('setting'):
+            setting_list = []
+            setting_items = selected.get('setting', [])[:2]
+            for s in setting_items:
+                if s:
+                    setting_list.append(s.capitalize())
+            setting_display = ', '.join(setting_list)
         
-        with col4:
-            # Show average rating
-            rating_info = get_average_rating_for_offer(selected['href'])
-            if rating_info['count'] > 0:
-                stars = '⭐' * int(round(rating_info['avg']))
-                st.caption("Rating")
-                st.markdown(f"**{stars} {rating_info['avg']:.1f}**")
-                st.caption(f"{rating_info['count']} reviews")
-            else:
-                st.caption("Rating")
-                st.markdown("**No reviews yet**")
+        rating_info = get_average_rating_for_offer(selected['href'])
+        rating_display = "No reviews"
+        if rating_info['count'] > 0:
+            rating_display = f"{rating_info['avg']:.1f} ({rating_info['count']})"
+        
+        # Create DataFrame with single row
+        metadata_df = pd.DataFrame({
+            'Intensity': [intensity_display],
+            'Focus': [focus_display],
+            'Setting': [setting_display],
+            'Rating': [rating_display]
+        })
+        
+        # Display as compact table
+        st.dataframe(
+            metadata_df,
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        # ================================================================
+        # RATING SECTION (only for logged-in users, placed prominently)
+        # ================================================================
+        if is_logged_in():
+            # Collect trainers from selected offer (events loaded later)
+            all_trainers = set()
+            if selected.get('trainers'):
+                for trainer in selected.get('trainers', []):
+                    if isinstance(trainer, dict):
+                        trainer_name = trainer.get('name')
+                    else:
+                        trainer_name = trainer
+                    if trainer_name:
+                        all_trainers.add(trainer_name)
+            
+            # Show ratings in a compact section (no expander to avoid nesting)
+            if all_trainers or selected:
+                st.markdown("### ⭐ Rate & Review")
+                
+                # Trainer ratings section
+                if all_trainers:
+                    st.markdown("**Trainers**")
+                    for idx, trainer_name in enumerate(sorted(all_trainers)):
+                        rating_info = get_average_rating_for_trainer(trainer_name)
+                        
+                        # Compact trainer display with rating info
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            if rating_info['count'] > 0:
+                                stars = '⭐' * int(round(rating_info['avg']))
+                                st.markdown(f"**{trainer_name}** {stars} {rating_info['avg']:.1f}/5 ({rating_info['count']})")
+                            else:
+                                st.markdown(f"**{trainer_name}** - No reviews yet")
+                        
+                        with col2:
+                            if st.button("Rate", key=f"rate_trainer_btn_{trainer_name}", use_container_width=True):
+                                st.session_state[f"show_trainer_rating_{trainer_name}"] = not st.session_state.get(f"show_trainer_rating_{trainer_name}", False)
+                                st.rerun()
+                        
+                        # Show rating widget if button was clicked
+                        if st.session_state.get(f"show_trainer_rating_{trainer_name}", False):
+                            render_trainer_rating_widget(trainer_name)
+                        
+                        if idx < len(sorted(all_trainers)) - 1:  # Don't show divider after last trainer
+                            st.divider()
+                    
+                    if selected:
+                        st.divider()
+                
+                # Activity rating section
+                if selected:
+                    st.markdown("**Activity**")
+                    rating_info = get_average_rating_for_offer(selected['href'])
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        if rating_info['count'] > 0:
+                            stars = '⭐' * int(round(rating_info['avg']))
+                            st.markdown(f"**{selected.get('name', 'Activity')}** {stars} {rating_info['avg']:.1f}/5 ({rating_info['count']} reviews)")
+                        else:
+                            st.markdown(f"**{selected.get('name', 'Activity')}** - No reviews yet")
+                    
+                    with col2:
+                        if st.button("Rate", key="rate_activity_btn", use_container_width=True):
+                            st.session_state["show_activity_rating"] = not st.session_state.get("show_activity_rating", False)
+                            st.rerun()
+                    
+                    # Show rating widget if button was clicked
+                    if st.session_state.get("show_activity_rating", False):
+                        render_sportangebot_rating_widget(selected['href'])
         
         st.divider()
     
@@ -1491,13 +2094,13 @@ with tab_details:
         # =====================================================================
         # NOTE: Sidebar is already rendered at module level
         # =====================================================================
-        # The sidebar is created only once before the tabs; here we simply
-        # read the filter values that were stored in session_state.
+        # The sidebar is created only once before the tabs; here the filter
+        # values that were stored in session_state are read.
         # =====================================================================
         # GET FILTER STATES
         # =====================================================================
         selected_sports = st.session_state.get('offers', [])
-        hide_cancelled = st.session_state.get('hide_cancelled', True)
+        hide_cancelled = st.session_state.get('hide_cancelled', False)  # Show all events by default
         date_start = st.session_state.get('date_start', None)
         date_end = st.session_state.get('date_end', None)
         selected_locations = st.session_state.get('location', [])
@@ -1523,7 +2126,9 @@ with tab_details:
             # Date filter
             if date_start or date_end:
                 start_time = e.get('start_time')
-                start_dt = datetime.fromisoformat(str(start_time).replace('Z', '+00:00'))
+                start_time_str = str(start_time)
+                start_time_clean = start_time_str.replace('Z', '+00:00')
+                start_dt = datetime.fromisoformat(start_time_clean)
                 event_date = start_dt.date()
                 
                 if date_start and event_date < date_start:
@@ -1537,13 +2142,19 @@ with tab_details:
             
             # Weekday filter
             if selected_weekdays:
-                start_dt = datetime.fromisoformat(str(e.get('start_time')).replace('Z', '+00:00'))
+                event_start_time = e.get('start_time')
+                event_start_str = str(event_start_time)
+                event_start_clean = event_start_str.replace('Z', '+00:00')
+                start_dt = datetime.fromisoformat(event_start_clean)
                 if start_dt.strftime('%A') not in selected_weekdays:
                     continue
             
             # Time filter
             if time_start_filter or time_end_filter:
-                start_dt = datetime.fromisoformat(str(e.get('start_time')).replace('Z', '+00:00'))
+                event_start_time = e.get('start_time')
+                event_start_str = str(event_start_time)
+                event_start_clean = event_start_str.replace('Z', '+00:00')
+                start_dt = datetime.fromisoformat(event_start_clean)
                 event_time = start_dt.time()
                 
                 if time_start_filter and event_time < time_start_filter:
@@ -1560,27 +2171,32 @@ with tab_details:
         if not filtered_events:
             st.info("🔍 No events match the selected filters.")
         else:
-            # German weekday translations for display
-            weekdays_german = {
-                'Monday': 'Montag', 'Tuesday': 'Dienstag', 'Wednesday': 'Mittwoch',
-                'Thursday': 'Donnerstag', 'Friday': 'Freitag',
-                'Saturday': 'Samstag', 'Sunday': 'Sonntag'
-            }
-            
             # Standardansicht: Tabelle (Cards-Ansicht entfernt)
             # Table View
             table_data = []
             for event in filtered_events:
-                start_dt = datetime.fromisoformat(str(event.get('start_time')).replace('Z', '+00:00'))
+                event_start_time = event.get('start_time')
+                event_start_str = str(event_start_time)
+                event_start_clean = event_start_str.replace('Z', '+00:00')
+                start_dt = datetime.fromisoformat(event_start_clean)
                 end_time = event.get('end_time')
                 
                 if end_time:
-                    end_dt = datetime.fromisoformat(str(end_time).replace('Z', '+00:00'))
+                    end_time_str = str(end_time)
+                    end_time_clean = end_time_str.replace('Z', '+00:00')
+                    end_dt = datetime.fromisoformat(end_time_clean)
                     time_val = f"{start_dt.strftime('%H:%M')} - {end_dt.strftime('%H:%M')}"
                 else:
                     time_val = start_dt.strftime('%H:%M')
                 
-                weekday = weekdays_german.get(start_dt.strftime('%A'), start_dt.strftime('%A'))
+                # Use English weekday names directly
+                weekday = start_dt.strftime('%A')
+                
+                # Determine event status
+                if event.get('canceled'):
+                    event_status = "Cancelled"
+                else:
+                    event_status = "Active"
                 
                 table_data.append({
                     "date": start_dt.date(),
@@ -1589,19 +2205,19 @@ with tab_details:
                     "sport": event.get('sport_name', 'Course'),
                     "location": event.get('location_name', 'N/A'),
                     "trainers": ", ".join(event.get('trainers', [])),
-                    "status": "Cancelled" if event.get('canceled') else "Active"
+                    "status": event_status
                 })
             
             st.dataframe(
-                table_data,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "date": st.column_config.DateColumn("Date", format="DD.MM.YYYY"),
-                    "time": "Time",
-                    "weekday": "Day",
-                    "sport": "Sport",
-                    "location": "Location",
+                    table_data,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "date": st.column_config.DateColumn("Date", format="DD.MM.YYYY"),
+                        "time": "Time",
+                        "weekday": "Day",
+                        "sport": "Sport",
+                        "location": "Location",
                         "trainers": "Trainers",
                         "status": st.column_config.TextColumn(
                             "Status",
@@ -1611,44 +2227,11 @@ with tab_details:
                     }
                 )
             
-            # ================================================================
-            # RATING SECTION (only for logged-in users and single activity)
-            # ================================================================
-            if is_logged_in() and selected:
-                # Collect all unique trainers from events
-                all_trainers = set()
-                for event in filtered_events:
-                    trainers = event.get('trainers', [])
-                    for trainer_name in trainers:
-                        if trainer_name:
-                            all_trainers.add(trainer_name)
-                
-                # Show trainer ratings
-                if all_trainers:
-                    st.divider()
-                    st.subheader("⭐ Rate Trainers")
-                    st.caption("Share your experience with trainers you know")
-                    
-                    for trainer_name in sorted(all_trainers):
-                        rating_info = get_average_rating_for_trainer(trainer_name)
-                        
-                        if rating_info['count'] > 0:
-                            stars = '⭐' * int(round(rating_info['avg']))
-                            st.markdown(f"**{trainer_name}** {stars} {rating_info['avg']:.1f}/5 ({rating_info['count']} reviews)")
-                        else:
-                            st.markdown(f"**{trainer_name}** - No reviews yet")
-                        
-                        render_trainer_rating_widget(trainer_name)
-                        st.divider()
-                
-                # Show activity rating
-                st.subheader("⭐ Rate This Activity")
-                render_sportangebot_rating_widget(selected['href'])
 
 # =============================================================================
-# PART 8: TAB 3 - ATHLETES & FRIENDS
+# PART 8: TAB 3 - ATHLETES
 # =============================================================================
-# PURPOSE: Social features - discover athletes, send/receive friend requests
+# PURPOSE: Social features - discover athletes, send/receive athlete requests
 # STREAMLIT CONCEPT: Authentication gates, database queries, user interactions
 # FOR BEGINNERS: This shows how to build social features in Streamlit
 
@@ -1661,13 +2244,12 @@ with tab_athletes:
     
     if not is_logged_in():
         # User is NOT logged in - show info message and stop
-        st.title("👥 Athletes & Friends")
         st.info("🔒 **Login required** - Sign in with Google in the sidebar to connect with other athletes!")
         
         st.markdown("""
         ### Why sign in?
         - 👥 **Discover Athletes** - Find and connect with other sports enthusiasts
-        - 📩 **Friend Requests** - Send and receive friend requests
+        - 📩 **Athlete Requests** - Send and receive athlete requests
         - 🤝 **Build Your Network** - Connect with your sports community
         - ⭐ **Rate & Review** - Share your experience with courses and trainers
         """)
@@ -1676,7 +2258,7 @@ with tab_athletes:
     # =========================================================================
     # IMPORT FUNCTIONS (only if logged in)
     # =========================================================================
-    from db import (
+    from utils.db import (
         get_user_id_by_sub,
         get_public_users,
         get_friend_status,
@@ -1734,21 +2316,25 @@ with tab_athletes:
     # =========================================================================
     # PAGE HEADER
     # =========================================================================
-    st.title("👥 Athletes & Friends")
-    st.caption("Connect with other athletes and build your sports community")
-    st.markdown("<br>", unsafe_allow_html=True)
+    # No header text - cleaner design
     
     # =========================================================================
-    # SUB-TABS FOR DIFFERENT SECTIONS
+    # TWO-COLUMN LAYOUT WITH SEPARATOR
     # =========================================================================
-    # STREAMLIT CONCEPT: Nested tabs for organizing related content
-    tab1, tab2, tab3 = st.tabs(["🔍 Discover Athletes", "📩 Friend Requests", "👥 My Friends"])
+    # STREAMLIT CONCEPT: Three-column layout with narrow middle column for separator
+    col_left, col_sep, col_right = st.columns([1, 0.03, 1])
+    
+    # Vertical separator in middle column
+    with col_sep:
+        st.markdown("""
+        <div style="border-left: 2px solid #e0e0e0; height: 100%; min-height: 500px; margin: 0;"></div>
+        """, unsafe_allow_html=True)
     
     # =========================================================================
-    # SUB-TAB 1: DISCOVER ATHLETES
+    # LEFT COLUMN: DISCOVER ATHLETES
     # =========================================================================
-    with tab1:
-        st.subheader("Discover Public Profiles")
+    with col_left:
+        st.subheader("🔍 Discover Athletes")
         
         # Load public users from database
         with st.spinner('🔄 Loading athletes...'):
@@ -1759,15 +2345,16 @@ with tab_athletes:
             st.caption("Be the first to make your profile public in Settings!")
         else:
             # Filter out own profile
-            public_users = [u for u in public_users if u['id'] != current_user_id]
+            filtered_public_users = []
+            for u in public_users:
+                if u['id'] != current_user_id:
+                    filtered_public_users.append(u)
+            public_users = filtered_public_users
             
             if not public_users:
                 st.info("📭 No other public profiles available yet.")
                 st.caption("Check back later as more athletes join the community!")
             else:
-                # Display count
-                st.caption(f"**{len(public_users)}** athlete{'s' if len(public_users) != 1 else ''} found")
-                
                 # Display each user as a card
                 for user in public_users:
                     with st.container(border=True):
@@ -1781,7 +2368,12 @@ with tab_athletes:
                             else:
                                 # Create initials avatar
                                 name = user.get('name', 'U')
-                                initials = ''.join([word[0].upper() for word in name.split()[:2]])
+                                name_words = name.split()[:2]
+                                initials_list = []
+                                for word in name_words:
+                                    if word:
+                                        initials_list.append(word[0].upper())
+                                initials = ''.join(initials_list)
                                 st.markdown(f"""
                                 <div style="width: 100px; height: 100px; border-radius: 50%; 
                                             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -1797,7 +2389,10 @@ with tab_athletes:
                             # Bio preview (first 120 characters)
                             if user.get('bio'):
                                 bio = user['bio']
-                                preview = bio[:120] + "..." if len(bio) > 120 else bio
+                                if len(bio) > 120:
+                                    preview = bio[:120] + "..."
+                                else:
+                                    preview = bio
                                 st.caption(preview)
                             
                             # Metadata (email and join date)
@@ -1819,7 +2414,7 @@ with tab_athletes:
                             
                             # Show different UI based on status
                             if status == "friends":
-                                st.success("✓ Friends")
+                                st.success("✓ Connected")
                                 if st.button("🗑️ Unfriend", key=f"unfollow_{user['id']}", use_container_width=True):
                                     if unfollow_user(current_user_id, user['id']):
                                         st.success("✅ Unfriended")
@@ -1846,112 +2441,116 @@ with tab_athletes:
                                         st.warning("Request already pending")
     
     # =========================================================================
-    # SUB-TAB 2: FRIEND REQUESTS
+    # RIGHT COLUMN: MY ATHLETES
     # =========================================================================
-    with tab2:
-        st.subheader("Friend Requests")
+    with col_right:
+        # My Athletes section
+        st.subheader("👥 My Athletes")
         
-        # Load pending friend requests
-        with st.spinner('🔄 Loading requests...'):
-            requests = get_pending_friend_requests(current_user_id)
-        
-        if not requests:
-            st.info("📭 No pending friend requests.")
-            st.caption("You'll see requests here when other athletes want to connect with you.")
-        else:
-            st.caption(f"**{len(requests)}** pending request{'s' if len(requests) != 1 else ''}")
+        # Athlete Requests Expander under the title
+        with st.expander("📩 Athlete Requests", expanded=False):
+            # Load pending athlete requests
+            with st.spinner('🔄 Loading requests...'):
+                requests = get_pending_friend_requests(current_user_id)
             
-            # Display each request
-            for req in requests:
-                with st.container(border=True):
-                    # Extract requester info (with fallback)
-                    requester = req.get('requester', {})
-                    if isinstance(requester, dict) and len(requester) > 0:
-                        requester_name = requester.get('name', 'Unknown')
-                        requester_picture = requester.get('picture')
-                        requester_email = requester.get('email', '')
-                    else:
-                        # Fallback: query user separately
-                        try:
-                            requester_data = get_user_by_id(req['requester_id'])
-                            if requester_data:
-                                requester_name = requester_data.get('name', 'Unknown')
-                                requester_picture = requester_data.get('picture')
-                                requester_email = requester_data.get('email', '')
-                            else:
+            if not requests:
+                st.info("📭 No pending athlete requests.")
+                st.caption("You'll see requests here when other athletes want to connect with you.")
+            else:
+                request_count = len(requests)
+                if request_count != 1:
+                    request_text = "requests"
+                else:
+                    request_text = "request"
+                st.caption(f"**{request_count}** pending {request_text}")
+                
+                # Display each request
+                for req in requests:
+                    with st.container(border=True):
+                        # Extract requester info (with fallback)
+                        requester = req.get('requester', {})
+                        if isinstance(requester, dict) and len(requester) > 0:
+                            requester_name = requester.get('name', 'Unknown')
+                            requester_picture = requester.get('picture')
+                            requester_email = requester.get('email', '')
+                        else:
+                            # Fallback: query user separately
+                            try:
+                                requester_data = get_user_by_id(req['requester_id'])
+                                if requester_data:
+                                    requester_name = requester_data.get('name', 'Unknown')
+                                    requester_picture = requester_data.get('picture')
+                                    requester_email = requester_data.get('email', '')
+                                else:
+                                    requester_name = "Unknown"
+                                    requester_picture = None
+                                    requester_email = ""
+                            except:
                                 requester_name = "Unknown"
                                 requester_picture = None
                                 requester_email = ""
-                        except:
-                            requester_name = "Unknown"
-                            requester_picture = None
-                            requester_email = ""
-                    
-                    # Three columns: picture, info, action
-                    col_pic, col_info, col_action = st.columns([1, 4, 2])
-                    
-                    with col_pic:
-                        if requester_picture and str(requester_picture).startswith('http'):
-                            st.image(requester_picture, width=80)
-                        else:
-                            # Create initials avatar
-                            initials = ''.join([word[0].upper() for word in requester_name.split()[:2]])
-                            st.markdown(f"""
-                            <div style="width: 80px; height: 80px; border-radius: 50%; 
-                                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                                        display: flex; align-items: center; justify-content: center;
-                                        color: white; font-size: 28px; font-weight: bold;">
-                                {initials}
-                            </div>
-                            """, unsafe_allow_html=True)
-                    
-                    with col_info:
-                        st.markdown(f"### {requester_name}")
                         
-                        # Metadata
-                        metadata = []
-                        if requester_email:
-                            metadata.append(f"📧 {requester_email}")
-                        if req.get('created_at'):
-                            request_date = req['created_at'][:10]
-                            metadata.append(f"📅 Requested {request_date}")
+                        # Three columns: picture, info, action
+                        col_pic, col_info, col_action = st.columns([1, 4, 2])
                         
-                        if metadata:
-                            st.caption(' • '.join(metadata))
-                    
-                    with col_action:
-                        st.write("")  # Spacing
+                        with col_pic:
+                            if requester_picture and str(requester_picture).startswith('http'):
+                                st.image(requester_picture, width=80)
+                            else:
+                                # Create initials avatar
+                                initials = ''.join([word[0].upper() for word in requester_name.split()[:2]])
+                                st.markdown(f"""
+                                <div style="width: 80px; height: 80px; border-radius: 50%; 
+                                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                            display: flex; align-items: center; justify-content: center;
+                                            color: white; font-size: 28px; font-weight: bold;">
+                                    {initials}
+                                </div>
+                                """, unsafe_allow_html=True)
                         
-                        # Accept button
-                        if st.button(
-                            "✅ Accept",
-                            key=f"accept_{req['id']}",
-                            use_container_width=True,
-                            type="primary"
-                        ):
-                            if accept_friend_request(req['id'], req['requester_id'], req['addressee_id']):
-                                st.success("✅ Friend request accepted!")
-                                st.rerun()
+                        with col_info:
+                            st.markdown(f"### {requester_name}")
+                            
+                            # Metadata
+                            metadata = []
+                            if requester_email:
+                                metadata.append(f"📧 {requester_email}")
+                            if req.get('created_at'):
+                                request_date = req['created_at'][:10]
+                                metadata.append(f"📅 Requested {request_date}")
+                            
+                            if metadata:
+                                st.caption(' • '.join(metadata))
                         
-                        # Decline button
-                        if st.button("❌ Decline", key=f"reject_{req['id']}", use_container_width=True):
-                            if reject_friend_request(req['id']):
-                                st.success("Request declined")
-                                st.rerun()
-    
-    # =========================================================================
-    # SUB-TAB 3: MY FRIENDS
-    # =========================================================================
-    with tab3:
-        st.subheader("My Friends")
+                        with col_action:
+                            st.write("")  # Spacing
+                            
+                            # Accept button
+                            if st.button(
+                                "✅ Accept",
+                                key=f"accept_{req['id']}",
+                                use_container_width=True,
+                                type="primary"
+                            ):
+                                if accept_friend_request(req['id'], req['requester_id'], req['addressee_id']):
+                                    st.success("✅ Athlete request accepted!")
+                                    st.rerun()
+                            
+                            # Decline button
+                            if st.button("❌ Decline", key=f"reject_{req['id']}", use_container_width=True):
+                                if reject_friend_request(req['id']):
+                                    st.success("Request declined")
+                                    st.rerun()
+        
+        st.markdown("<br>", unsafe_allow_html=True)
         
         # Load friends list
-        with st.spinner('🔄 Loading friends...'):
+        with st.spinner('🔄 Loading athletes...'):
             friends = get_user_friends(current_user_id)
         
         if not friends:
-            st.info("👋 No friends yet - start connecting with other athletes!")
-            st.caption("Browse the Discover Athletes tab to send friend requests.")
+            st.info("👋 No athletes connected yet - start connecting with other athletes!")
+            st.caption("Browse the Discover Athletes section to send athlete requests.")
         else:
             # Remove duplicates by tracking unique IDs
             seen_ids = set()
@@ -1962,7 +2561,12 @@ with tab_athletes:
                     seen_ids.add(friend_id)
                     unique_friends.append(friend)
             
-            st.caption(f"**{len(unique_friends)}** friend{'s' if len(unique_friends) != 1 else ''}")
+            friend_count = len(unique_friends)
+            if friend_count != 1:
+                athlete_text = "athletes"
+            else:
+                athlete_text = "athlete"
+            st.caption(f"**{friend_count}** {athlete_text}")
             
             # Display each friend
             for friend in unique_friends:
@@ -1994,7 +2598,11 @@ with tab_athletes:
                         if friend.get('email'):
                             metadata.append(f"📧 {friend['email']}")
                         if friend.get('bio'):
-                            bio_preview = friend['bio'][:80] + "..." if len(friend['bio']) > 80 else friend['bio']
+                            friend_bio = friend['bio']
+                            if len(friend_bio) > 80:
+                                bio_preview = friend_bio[:80] + "..."
+                            else:
+                                bio_preview = friend_bio
                             metadata.append(bio_preview)
                         
                         if metadata:
@@ -2012,7 +2620,6 @@ with tab_profile:
     # CHECK LOGIN STATUS
     # =========================================================================
     if not is_logged_in():
-        st.title("👤 My Profile")
         st.info("🔒 **Login required** - Sign in with Google in the sidebar to manage your profile!")
         
         st.markdown("""
@@ -2020,7 +2627,7 @@ with tab_profile:
         - 📋 **View Your Info** - See your account details and activity
         - ⚙️ **Set Preferences** - Choose your favorite sports and activities  
         - 🌐 **Control Visibility** - Decide who can see your profile
-        - 👥 **Track Social Stats** - See your friends and social connections
+        - 👥 **Track Social Stats** - See your athletes and social connections
         - ⭐ **Rate Activities** - Share your experience with courses and trainers
         """)
         st.stop()
@@ -2029,13 +2636,8 @@ with tab_profile:
     # IMPORTS
     # =========================================================================
     import json
-    from user import (
-        get_user_profile,
-        get_user_favorites,
-        update_user_favorites,
-        update_user_preferences
-    )
-    from db import (
+    from utils.db import (
+        get_user_complete,
         get_offers_complete,
         update_user_settings
     )
@@ -2043,115 +2645,100 @@ with tab_profile:
     # =========================================================================
     # PAGE HEADER
     # =========================================================================
-    st.title("👤 My Profile")
-    st.caption("Manage your profile, preferences and settings")
-    st.markdown("<br>", unsafe_allow_html=True)
+    # No header text - cleaner design
     
     # =========================================================================
     # LOAD USER PROFILE
     # =========================================================================
-    profile = get_user_profile()
+    user_sub = get_user_sub()
+    if not user_sub:
+        st.error("❌ Login required.")
+        st.stop()
+    
+    profile = get_user_complete(user_sub)
     if not profile:
         st.error("❌ Profile not found.")
         st.stop()
     
     # =========================================================================
-    # PROFILE SUB-TABS
+    # TWO COLUMN LAYOUT WITH SEPARATOR
     # =========================================================================
-    # Organize profile sections into tabs
-    tab1, tab2, tab3 = st.tabs([
-        "📋 Information",
-        "⚙️ Preferences",
-        "🌐 Visibility"
-    ])
+    col_left, col_separator, col_right = st.columns([1, 0.05, 1])
     
     # =========================================================================
-    # PROFILE TAB 1: INFORMATION
+    # LEFT COLUMN: USER INFORMATION & LOGOUT
     # =========================================================================
-    with tab1:
+    with col_left:
         st.subheader("User Information")
         
-        # User info card
-        with st.container(border=True):
-            col_pic, col_info = st.columns([1, 4])
+        # User info card (no border)
+        col_pic, col_info = st.columns([1, 3])
+        
+        with col_pic:
+            # Profile picture with fallback
+            if profile.get('picture') and str(profile['picture']).startswith('http'):
+                st.image(profile['picture'], width=120)
+            else:
+                # Create initials avatar
+                name = profile.get('name', 'U')
+                initials = ''.join([word[0].upper() for word in name.split()[:2]])
+                st.markdown(f"""
+                <div style="width: 120px; height: 120px; border-radius: 50%; 
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            display: flex; align-items: center; justify-content: center;
+                            color: white; font-size: 40px; font-weight: bold;">
+                    {initials}
+                </div>
+                """, unsafe_allow_html=True)
+        
+        with col_info:
+            st.markdown(f"### {profile.get('name', 'N/A')}")
             
-            with col_pic:
-                # Profile picture with fallback
-                if profile.get('picture') and str(profile['picture']).startswith('http'):
-                    st.image(profile['picture'], width=100)
-                else:
-                    # Create initials avatar
-                    name = profile.get('name', 'U')
-                    initials = ''.join([word[0].upper() for word in name.split()[:2]])
-                    st.markdown(f"""
-                    <div style="width: 100px; height: 100px; border-radius: 50%; 
-                                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                                display: flex; align-items: center; justify-content: center;
-                                color: white; font-size: 32px; font-weight: bold;">
-                        {initials}
-                    </div>
-                    """, unsafe_allow_html=True)
-            
-            with col_info:
-                    st.markdown(f"### {profile.get('name', 'N/A')}")
-                    
-                    # Metadata
-                    metadata = []
-                    if profile.get('email'):
-                        metadata.append(f"📧 {profile['email']}")
-                    if profile.get('created_at'):
-                        metadata.append(f"📅 Member since {profile['created_at'][:10]}")
-                    if profile.get('last_login'):
-                        metadata.append(f"🕐 Last login {profile['last_login'][:10]}")
-                    
-                    if metadata:
-                        st.caption(' • '.join(metadata))
+            # Metadata - structured in separate lines
+            if profile.get('email'):
+                st.markdown(f"📧 {profile['email']}")
+            if profile.get('created_at'):
+                st.markdown(f"📅 Member since {profile['created_at'][:10]}")
+            if profile.get('last_login'):
+                st.markdown(f"🕐 Last login {profile['last_login'][:10]}")
         
         st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Logout option
+        if st.button("🚪 Logout", type="secondary", use_container_width=True):
+            handle_logout()
     
     # =========================================================================
-    # PROFILE TAB 2: PREFERENCES
+    # SEPARATOR COLUMN: VERTICAL LINE
     # =========================================================================
-    with tab2:
-        st.subheader("🏃 Favorite Sports")
-        
-        # Load sports data and current favorites
-        try:
-            sportangebote = get_offers_complete()
-            # Create dictionary: sport name -> sport href
-            sportarten_dict = {sport['name']: sport['href'] for sport in sportangebote}
-            sportarten_options = sorted(list(sportarten_dict.keys()))
-            
-            # Load current favorites (stored as hrefs)
-            current_favorite_hrefs = get_user_favorites()
-            # Convert hrefs back to names for display
-            current_favorite_names = [
-                sport['name'] for sport in sportangebote
-                if sport['href'] in current_favorite_hrefs
-            ]
-            
-            # Multiselect for favorite sports
-            favorite_sports = st.multiselect(
-                "Select your favorite activities",
-                options=sportarten_options,
-                default=current_favorite_names,
-                help="These activities will be highlighted in your overview"
-            )
-            
-            if current_favorite_names:
-                st.caption(f"Currently {len(current_favorite_names)} favorite{'s' if len(current_favorite_names) != 1 else ''} selected")
-        except Exception as e:
-            st.error(f"Error loading sports: {e}")
-            sportarten_dict = {}
-            favorite_sports = []
+    with col_separator:
+        st.markdown(
+            """
+            <style>
+            .vertical-separator {
+                border-left: 2px solid #e0e0e0;
+                height: 100vh;
+                position: relative;
+            }
+            </style>
+            <div style="border-left: 2px solid #e0e0e0; height: 800px; margin: 0;"></div>
+            """,
+            unsafe_allow_html=True
+        )
     
     # =========================================================================
-    # PROFILE TAB 3: VISIBILITY
+    # RIGHT COLUMN: SETTINGS
     # =========================================================================
-    with tab3:
-        st.subheader("🌐 Profile Visibility")
+    with col_right:
+        st.subheader("Settings")
         
-        st.info("🔍 Control who can see your profile and connect with you")
+        # =========================================================================
+        # FAVORITE SPORTS
+        # =========================================================================
+        # =========================================================================
+        # PROFILE VISIBILITY
+        # =========================================================================
+        st.markdown("#### Profile Visibility")
         
         # Get current visibility setting
         current_is_public = profile.get('is_public', False)
@@ -2163,53 +2750,41 @@ with tab_profile:
             help="Allow other users to see your profile on the Athletes page"
         )
         
-        # Show status message
+        # Show status message integrated with toggle
         if is_public:
-            st.success("✅ Your profile is **public**")
-            st.caption("Other users can find you, send friend requests, and see when you attend courses")
+            st.caption("Other users can find you, send athlete requests, and see when you attend courses")
         else:
             st.warning("🔒 Your profile is **private**")
             st.caption("Only you can see your profile and activity")
         
-        # Save visibility button
-        if st.button("💾 Save Visibility", type="primary"):
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # =========================================================================
+        # SAVE ALL CHANGES BUTTON
+        # =========================================================================
+        if st.button("💾 Save All Changes", type="secondary", use_container_width=True):
             user_sub = get_user_sub()
-            if update_user_settings(user_sub, visibility=is_public):
-                st.success("✅ Visibility settings updated!")
+            success_count = 0
+            error_messages = []
+            
+            # Save visibility
+            try:
+                if update_user_settings(user_sub, visibility=is_public):
+                    success_count += 1
+                else:
+                    error_messages.append("Failed to update visibility")
+            except Exception as e:
+                error_messages.append(f"Error updating visibility: {str(e)}")
+            
+            # Show results
+            if success_count > 0 and not error_messages:
+                st.success("✅ All changes saved successfully!")
+                st.rerun()
+            elif success_count > 0:
+                st.warning(f"⚠️ Some changes saved, but errors occurred: {', '.join(error_messages)}")
                 st.rerun()
             else:
-                st.error("❌ Error updating visibility")
-        
-        st.divider()
-        
-        # Social statistics
-        st.subheader("👥 Social Statistics")
-        
-        try:
-            # Friend count is included in profile from database view
-            friend_count = profile.get('friend_count', 0)
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.metric("Friends", friend_count)
-            
-            with col2:
-                st.metric("Visibility", "Public" if current_is_public else "Private")
-            
-            if friend_count > 0:
-                st.caption(f"💡 You're connected with {friend_count} athlete{'s' if friend_count != 1 else ''}")
-        except Exception:
-            pass
-        
-        st.divider()
-        
-        # Logout section
-        st.subheader("🚪 Logout")
-        st.caption("Sign out of your account")
-        
-        if st.button("🚪 Logout", type="primary", use_container_width=True):
-            handle_logout()
+                st.error(f"❌ Failed to save changes: {', '.join(error_messages)}")
 
 # =============================================================================
 # PART 10: TAB 5 - ABOUT
@@ -2219,115 +2794,127 @@ with tab_profile:
 # FOR BEGINNERS: This shows how to create informational pages
 
 with tab_about:
-    st.title("ℹ️ About")
-    st.caption("Learn more about UnisportAI and the team behind it")
-    st.markdown("<br>", unsafe_allow_html=True)
+    # No header text - cleaner design
     
     # (Data status section removed on request)
     
     # =========================================================================
-    # HOW IT WORKS
+    # TWO COLUMN LAYOUT WITH SEPARATOR
     # =========================================================================
-    st.subheader("💡 How This App Works")
-    st.markdown("""
-    **What's happening behind the scenes?**
-    
-    1. **Automated Data Collection:** Python scripts automatically scrape Unisport websites 
-       (offers, courses, dates, locations) via GitHub Actions on a regular schedule.
-    
-    2. **Data Storage:** All data is stored in Supabase, our hosted PostgreSQL database.
-    
-    3. **Real-time Display:** This Streamlit app loads data directly from Supabase and 
-       displays it here in real-time.
-    
-    4. **Smart Features:** AI-powered recommendations using Machine Learning (KNN algorithm), 
-       advanced filtering system, ratings, and social networking.
-    
-    **Tech Stack:**
-    - **Frontend:** Streamlit (Python web framework)
-    - **Database:** Supabase (PostgreSQL)
-    - **ML:** scikit-learn (KNN recommender)
-    - **Visualization:** Plotly (interactive charts)
-    - **Authentication:** Google OAuth via Streamlit
-    """)
-    
-    st.divider()
+    col_left, col_separator, col_right = st.columns([1, 0.05, 1])
     
     # =========================================================================
-    # PROJECT TEAM
+    # LEFT COLUMN: HOW IT WORKS
     # =========================================================================
-    st.subheader("👥 Project Team")
-    
-    # Team members with LinkedIn profiles
-    team = [
-        (
-            "Tamara Nessler",
-            "https://www.linkedin.com/in/tamaranessler/",
-            "https://media.licdn.com/dms/image/v2/D4D03AQHoFx3FqbKv8Q/profile-displayphoto-shrink_800_800/profile-displayphoto-shrink_800_800/0/1729070262001?e=1762387200&v=beta&t=qxTtWz-rqXh2ooOxkLCaODftWKDB-mCnB1Kf6nu4JPU",
-        ),
-        (
-            "Till Banerjee",
-            "https://www.linkedin.com/in/till-banerjee/",
-            "https://media.licdn.com/dms/image/v2/D4E03AQFL1-Ud8CLN3g/profile-displayphoto-shrink_800_800/profile-displayphoto-shrink_800_800/0/1708701675021?e=1762387200&v=beta&t=msstC8263pJyCfjiZwNzfYF3l57yHvSpIuMO77A-U0A",
-        ),
-        (
-            "Sarah Bugg",
-            "https://www.linkedin.com/in/sarah-bugg/",
-            "https://media.licdn.com/dms/image/v2/D4E03AQEanhywBsKAPA/profile-displayphoto-scale_400_400/B4EZkoux6gKkAg-/0/1757324976456?e=1762387200&v=beta&t=Gicl6-C96pUuB2MUNVwbKzctjVaqaQDn39blJxdkjAo",
-        ),
-        (
-            "Antonia Büttiker",
-            "https://www.linkedin.com/in/antonia-büttiker-895713254/",
-            "https://media.licdn.com/dms/image/v2/D4E03AQHZuEjmbys12Q/profile-displayphoto-shrink_400_400/B4EZVwmujrG0Ak-/0/1741350956527?e=1762387200&v=beta&t=s3ypqYDZ6Od8XU9ktFTwRNnwSHckHmFejMpnn8GdhWg",
-        ),
-        (
-            "Luca Hagenmayer",
-            "https://www.linkedin.com/in/lucahagenmayer/",
-            "https://media.licdn.com/dms/image/v2/D4E03AQFGdchJCbDXFQ/profile-displayphoto-shrink_400_400/profile-displayphoto-shrink_400_400/0/1730973343664?e=1762387200&v=beta&t=1awZw8RSI5xBKF9gFxOlFYsNDxGalTcgK3z-Ma8R0qU",
-        ),
-    ]
-    
-    # Display team in a grid (5 columns)
-    cols = st.columns(5)
-    for idx, (name, url, avatar) in enumerate(team):
-        with cols[idx]:
-            st.image(avatar, use_container_width=True)
-            st.markdown(f"**[{name}]({url})**", unsafe_allow_html=True)
-    
-    st.divider()
+    with col_left:
+        st.subheader("💡 How This App Works")
+        st.markdown("""
+        **What's happening behind the scenes?**
+        
+        1. **Automated Data Collection:** Python scripts automatically scrape Unisport websites 
+           (offers, courses, dates, locations) via GitHub Actions on a regular schedule.
+        
+        2. **Data Storage:** All data is stored in Supabase, our hosted PostgreSQL database.
+        
+        3. **Real-time Display:** This Streamlit app loads data directly from Supabase and 
+           displays it here in real-time.
+        
+        4. **Smart Features:** AI-powered recommendations using Machine Learning (KNN algorithm), 
+           advanced filtering system, ratings, and social networking.
+        
+        **Tech Stack:**
+        - **Frontend:** Streamlit (Python web framework)
+        - **Database:** Supabase (PostgreSQL)
+        - **ML:** scikit-learn (KNN recommender)
+        - **Visualization:** Plotly (interactive charts)
+        - **Authentication:** Google OAuth via Streamlit
+        """)
     
     # =========================================================================
-    # PROJECT CONTEXT
+    # SEPARATOR COLUMN: VERTICAL LINE
     # =========================================================================
-    st.subheader("🎓 Project Background")
-    st.markdown("""
-    This project was created for the course **"Fundamentals and Methods of Computer Science"** 
-    at the University of St.Gallen, taught by:
-    - Prof. Dr. Stephan Aier
-    - Dr. Bernhard Bermeitinger
-    - Prof. Dr. Simon Mayer
+    with col_separator:
+        st.markdown(
+            """
+            <style>
+            .vertical-separator {
+                border-left: 2px solid #e0e0e0;
+                height: 100vh;
+                position: relative;
+            }
+            </style>
+            <div style="border-left: 2px solid #e0e0e0; height: 800px; margin: 0;"></div>
+            """,
+            unsafe_allow_html=True
+        )
     
-    **Status:** Still in development and not yet reviewed by professors.
-    
-    **Feedback?** Have feature requests or found bugs? Please contact one of the team members 
-    via LinkedIn (see above).
-    """)
+    # =========================================================================
+    # RIGHT COLUMN: PROJECT TEAM AND PROJECT BACKGROUND
+    # =========================================================================
+    with col_right:
+        # =========================================================================
+        # PROJECT TEAM
+        # =========================================================================
+        st.subheader("👥 Project Team")
+        
+        # Team members with LinkedIn profiles
+        # Use local images from assets/images folder
+        assets_path = Path(__file__).resolve().parent / "assets" / "images"
+        team = [
+            (
+                "Tamara Nessler",
+                "https://www.linkedin.com/in/tamaranessler/",
+                str(assets_path / "tamara.jpeg"),
+            ),
+            (
+                "Till Banerjee",
+                "https://www.linkedin.com/in/till-banerjee/",
+                str(assets_path / "till.jpeg"),
+            ),
+            (
+                "Sarah Bugg",
+                "https://www.linkedin.com/in/sarah-bugg/",
+                str(assets_path / "sarah.jpeg"),
+            ),
+            (
+                "Antonia Büttiker",
+                "https://www.linkedin.com/in/antonia-büttiker-895713254/",
+                str(assets_path / "antonia.jpeg"),
+            ),
+            (
+                "Luca Hagenmayer",
+                "https://www.linkedin.com/in/lucahagenmayer/",
+                str(assets_path / "luca.jpeg"),
+            ),
+        ]
+        
+        # Display team in a grid (5 columns)
+        cols = st.columns(5)
+        for idx, (name, url, avatar) in enumerate(team):
+            with cols[idx]:
+                st.image(avatar, width=180)
+                st.markdown(f"**[{name}]({url})**", unsafe_allow_html=True)
+        
+        st.divider()
+        
+        # =========================================================================
+        # PROJECT CONTEXT
+        # =========================================================================
+        st.subheader("🎓 Project Background")
+        st.markdown("""
+        This project was created for the course **"Fundamentals and Methods of Computer Science"** 
+        at the University of St.Gallen, taught by:
+        - Prof. Dr. Stephan Aier
+        - Dr. Bernhard Bermeitinger
+        - Prof. Dr. Simon Mayer
+        
+        **Status:** Still in development and not yet reviewed by professors.
+        
+        **Feedback?** Have feature requests or found bugs? Please contact one of the team members 
+        via LinkedIn (see above).
+        """)
 
-# =============================================================================
-# END OF STREAMLIT APP
-# =============================================================================
-# KEY TAKEAWAYS FROM THIS IMPLEMENTATION:
-# 1. Use session_state to persist data between reruns.
-# 2. Cache expensive operations with @st.cache_resource or @st.cache_data.
-# 3. Break complex logic into small, well-documented functions.
-# 4. Use tabs and expanders to structure complex pages.
-# 5. Check authentication before showing protected content.
-# 6. Filter and display data step by step for clarity.
-# 7. Provide helpful error messages and empty states.
-# 8. Use st.rerun() after state changes when the UI must refresh immediately.
-#
-# This file is intentionally verbose so that the overall architecture,
-# data flow and design decisions remain transparent to anyone reading it.
-# =============================================================================
 
+# Parts of this codebase were developed with the assistance of AI-based tools (Cursor and Github Copilot)
+# All outputs generated by such systems were reviewed, validated, and modified by the author.
 
