@@ -417,48 +417,6 @@ def get_ml_training_data_cli():
 def get_supabase_client():
     return supaconn()
 
-# Test if Supabase database connection is available
-# Returns a tuple: (success boolean, message string)
-# Testing the connection early helps catch configuration errors before they cause problems
-def test_database_connection():
-    # Database operations can fail, so we use try/except for error handling
-    try:
-        # Try to query the database
-        conn = supaconn()
-        conn.table("etl_runs").select("ran_at").limit(1).execute()
-        return True, "✅ Database connection successful"
-    except Exception as e:
-        # The "as e" syntax lets us access the error message
-        # Check what kind of error it was
-        error_msg = str(e)
-        has_url_error = "URL not provided" in error_msg
-        has_key_error = "key not provided" in error_msg
-        if has_url_error or has_key_error:
-            # Missing credentials error
-            error_message = """
-❌ **Supabase credentials missing**
-
-This application needs database credentials to work correctly.
-
-**How to fix this:**
-1. Create/check `.streamlit/secrets.toml` in your project root
-2. Add your Supabase credentials:
-   
-   [connections.supabase]
-   url = "your-supabase-url"
-   key = "your-supabase-key"
-
-3. Restart the Streamlit app
-
-Configuring external services explicitly avoids hard-to-debug
-runtime errors later in the request flow.
-"""
-            return False, error_message
-        else:
-            # Some other database error
-            error_message = f"❌ **Database connection failed:** {error_msg}"
-            return False, error_message
-
 # Get when database was last updated (ETL run timestamp)
 # Returns formatted string or 'unknown'
 # Timezone conversion is important when displaying times to users

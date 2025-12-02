@@ -72,7 +72,6 @@ from utils.auth import (
 
 # Utility functions (refactored from this file)
 from utils import (
-    test_database_connection,
     get_data_timestamp,
     load_knn_model,
     build_user_preferences_from_filters,
@@ -99,31 +98,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"    # Sidebar visible by default
 )
 
-# =============================================================================
-# PART 2: ML INTEGRATION (moved to utils/ml_utils.py)
-# =============================================================================
-# NOTE: ML functions are now imported from utils.ml_utils
-# - load_knn_model()
-# - build_user_preferences_from_filters()
-# - get_ml_recommendations()
-
-# =============================================================================
-# PART 3: FILTER UTILITIES (moved to utils/filters.py)
-# =============================================================================
-# NOTE: Filter functions are now imported from utils.filters
-# - check_event_matches_filters()
-# - filter_offers()
-# - filter_events()
-
-# =============================================================================
-# PART 4: SIDEBAR COMPONENTS (UNIFIED VERSION)
-# =============================================================================
-# PURPOSE: Create a consistent sidebar that works across all tabs
-# SIMPLIFICATION: Original had complex context-dependent logic, this is unified
-# STREAMLIT CONCEPT: st.sidebar creates a sidebar, session_state persists data
-# FOR BEGINNERS: Session state is KEY - it remembers user selections between reruns
-
-# NOTE: create_user_info_card_html() is now imported from utils.formatting
 
 # =============================================================================
 # SESSION STATE INITIALIZATION
@@ -174,29 +148,35 @@ def initialize_session_state():
             st.session_state[key] = value
 
 
-def render_unified_sidebar(sports_data=None, events=None):
-    """
-    Render a unified sidebar with all filters.
-    
-    PURPOSE:
-        Provide a single, reusable sidebar that works consistently across
-        all tabs, so filter state is managed in exactly one place.
-    STREAMLIT CONCEPT:
-        Session state stores filter values, widgets update them, and all
-        tabs read from the same shared state.
-    
-    PATTERN:
-        1. Show user info (login/profile)
-        2. Load data if not provided
-        3. Render activity filters (if sports_data available)
-        4. Render course filters (if events available)
-        5. Store all selections in session_state
-    
-    Args:
-        sports_data: List of sports offers (optional, will load if None)
-        events: List of events (optional, will load if None)
-    """
-    with st.sidebar:
+# =============================================================================
+# DATA LOADING (Early, before sidebar rendering)
+# =============================================================================
+# Load data early so it's available for sidebar filters and all tabs
+from utils.db import get_offers_complete, get_events
+
+if 'sports_data' not in st.session_state:
+    st.session_state['sports_data'] = get_offers_complete()
+
+if 'events_data' not in st.session_state:
+    st.session_state['events_data'] = get_events()
+
+sports_data = st.session_state.get('sports_data', [])
+events = st.session_state.get('events_data', [])
+
+# =============================================================================
+# UNIFIED SIDEBAR (Rendered once at module level)
+# =============================================================================
+# IMPORTANT:
+#     The sidebar must be rendered once at module level, not separately
+#     inside each tab. Re-rendering it per tab would create duplicate
+#     widget keys and scattered state.
+#
+# PATTERN:
+#     - Render sidebar directly here, before defining tabs.
+#     - Keep user info and all filters in this single sidebar.
+#     - Read the resulting values from st.session_state inside the tabs.
+
+with st.sidebar:
         # =================================================================
         # USER INFO SECTION (Always shown first)
         # =================================================================
@@ -314,27 +294,6 @@ def render_unified_sidebar(sports_data=None, events=None):
         st.session_state['search_text'] = search_text
         
         st.markdown("<br>", unsafe_allow_html=True)
-        
-        # =================================================================
-        # LOAD DATA (immer laden, ohne Error Handling)
-        # =================================================================
-        from utils.db import get_offers_complete, get_events
-
-        if sports_data is None:
-            sports_data = st.session_state.get('sports_data')
-        if sports_data is None:
-            sports_data = get_offers_complete()
-            st.session_state['sports_data'] = sports_data
-
-        if events is None:
-            events = st.session_state.get('events_data')
-        if events is None:
-            events = get_events()
-            st.session_state['events_data'] = events
-
-        # Fallbacks, damit die Filter immer gerendert werden können
-        sports_data = sports_data or []
-        events = events or []
         
         # =================================================================
         # ACTIVITY FILTERS (immer anzeigen)
@@ -540,7 +499,6 @@ def render_unified_sidebar(sports_data=None, events=None):
                 )
                 st.session_state['ml_min_match'] = ml_min_match
 
-
 # NOTE: get_data_timestamp() is now imported from utils.db
 
 # =============================================================================
@@ -559,53 +517,6 @@ def render_unified_sidebar(sports_data=None, events=None):
 initialize_session_state()
 
 # =============================================================================
-# DATABASE CONNECTION CHECK
-# =============================================================================
-# DESIGN NOTE:
-#     External dependencies are validated early so configuration issues are
-#     surfaced before any complex UI logic is executed.
-db_ok, db_message = test_database_connection()
-
-if not db_ok:
-    # Show database error prominently at the top
-    st.error("⚠️ **Database Connection Failed**")
-    st.info("🔧 **This is a configuration issue, not a login requirement.**\n\nThe app cannot connect to the Supabase database. Please check your database credentials.")
-    with st.expander("📚 How to fix this", expanded=True):
-        st.markdown(db_message)
-        st.markdown("""
-        ### Why does this matter?
-        
-        This app uses **Supabase** (a PostgreSQL database) to store:
-        - Sports activities and courses
-        - User profiles and preferences  
-        - Ratings and social connections
-        - ETL run timestamps
-        
-        **Without the database, the app can't load data.**
-        
-        ### For Streamlit Cloud:
-        1. Go to your app settings in Streamlit Cloud
-        2. Navigate to "Secrets" section
-        3. Add your Supabase credentials in this format:
-        
-        ```toml
-        [connections.supabase]
-        url = "https://your-project-id.supabase.co"
-        key = "your-anon-or-service-key"
-        ```
-        
-        ### For local development:
-        - Verify the configuration in `.streamlit/secrets.toml`
-        - Check your Supabase project status
-        - Review the connection details shown in the error message above
-        
-        As a fallback, you can still study the code structure and UI patterns
-        even when live data is not available.
-        """)
-    
-    st.info("💡 The app will continue, but database-dependent features will not be available.")
-
-# =============================================================================
 # AUTHENTICATION CHECK
 # =============================================================================
 # If user is logged in, sync with database and check token
@@ -614,24 +525,9 @@ if is_logged_in():
     try:
         sync_user_to_supabase()  # Sync user data to our database
     except Exception as e:
-        # Only show warning if database is supposed to be working
-        if db_ok:
-            st.warning(f"Error syncing user: {e}")
+        st.warning(f"Error syncing user: {e}")
 
-# =============================================================================
-# RENDER UNIFIED SIDEBAR (ONCE FOR ALL TABS)
-# =============================================================================
-# IMPORTANT:
-#     The sidebar must be rendered once at module level, not separately
-#     inside each tab. Re-rendering it per tab would create duplicate
-#     widget keys and scattered state.
-#
-# PATTERN:
-#     - Call render_unified_sidebar() once here, before defining tabs.
-#     - Keep user info and all filters in this single sidebar.
-#     - Read the resulting values from st.session_state inside the tabs.
-
-render_unified_sidebar()
+# Sidebar is already rendered above at module level
 
 # =============================================================================
 # ML RECOMMENDATIONS VISUALIZATION

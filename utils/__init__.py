@@ -36,7 +36,7 @@ HOW TO USE THIS PACKAGE?
 Functions can be imported in different ways:
 
     # Import specific functions from the package
-    from utils import test_database_connection, filter_events
+    from utils import filter_events
     
     # Import functions from a specific module
     from utils.db import get_offers_complete
@@ -52,7 +52,7 @@ This is a best practice: it controls what other code can access
 # Relative imports (with .) are preferred over absolute imports in packages
 
 # Database functions
-from .db import test_database_connection, get_data_timestamp
+from .db import get_data_timestamp
 
 # Machine learning functions
 from .ml_utils import load_knn_model, build_user_preferences_from_filters, get_ml_recommendations
@@ -68,7 +68,6 @@ from .formatting import create_user_info_card_html
 # It's a way to control what's "public" vs "private" in this package
 # Only the functions listed here will be imported with "import *"
 __all__ = [
-    'test_database_connection',
     'get_data_timestamp',
     'load_knn_model',
     'build_user_preferences_from_filters',
