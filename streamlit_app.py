@@ -230,64 +230,26 @@ with st.sidebar:
                 user_email = ""
                 user_picture = None
             
-            # Create beautiful profile card with modern design
-            name_words = user_name.split()[:2]
-            initials = ''.join([word[0].upper() for word in name_words if word]) if name_words else "U"
-            
-            profile_card_html = f"""
-            <div style="
-                background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-                padding: 20px;
-                border-radius: 16px;
-                margin-bottom: 16px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-                text-align: center;
-            ">
-                <div style="margin-bottom: 12px;">
-            """
-            
-            if user_picture and str(user_picture).startswith('http'):
-                profile_card_html += f"""
-                    <img src="{user_picture}" 
-                         style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.15);"
-                         alt="Profile picture">
-                """
-            else:
-                profile_card_html += f"""
-                    <div style="
-                        width: 80px;
-                        height: 80px;
-                        border-radius: 50%;
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                        color: white;
-                        font-size: 32px;
-                        font-weight: bold;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        margin: 0 auto;
-                        border: 3px solid white;
-                        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-                    ">{initials}</div>
-                """
-            
-            profile_card_html += f"""
-                </div>
-                <div style="
-                    font-size: 18px;
-                    font-weight: 600;
-                    color: #1f2937;
-                    margin-bottom: 6px;
-                ">{user_name}</div>
-                <div style="
-                    font-size: 13px;
-                    color: #6b7280;
-                    word-break: break-word;
-                ">{user_email}</div>
-            </div>
-            """
-            
-            st.markdown(profile_card_html, unsafe_allow_html=True)
+            # Create profile card using native Streamlit components
+            with st.container(border=True):
+                # Center the content using columns
+                col1, col2, col3 = st.columns([1, 2, 1])
+                
+                with col2:
+                    # Profile picture or initials avatar
+                    if user_picture and str(user_picture).startswith('http'):
+                        st.image(user_picture, width=80, use_container_width=False)
+                    else:
+                        # Create initials avatar
+                        name_words = user_name.split()[:2]
+                        initials = ''.join([word[0].upper() for word in name_words if word]) if name_words else "U"
+                        st.markdown(f"### {initials}")
+                    
+                    # User name
+                    st.markdown(f"**{user_name}**")
+                    
+                    # User email
+                    st.caption(user_email)
         
         # Separator after user section
         st.markdown("---")
@@ -1889,47 +1851,40 @@ with tab_profile:
                 st.error("❌ Profile not found.")
             else:
                 # =========================================================================
-                # TWO COLUMN LAYOUT
+                # SINGLE COLUMN LAYOUT
                 # =========================================================================
-                col_left, col_right = st.columns(2)
+                st.subheader("User Information")
                 
-                # =========================================================================
-                # LEFT COLUMN: USER INFORMATION & LOGOUT
-                # =========================================================================
-                with col_left:
-                    st.subheader("User Information")
-                    
-                    # User info card (no border)
-                    col_pic, col_info = st.columns([1, 3])
-                    
-                    with col_pic:
-                        # Profile picture with fallback
-                        if profile.get('picture') and str(profile['picture']).startswith('http'):
-                            st.image(profile['picture'], width=120)
-                        else:
-                            # Create initials avatar using Streamlit-native approach
-                            name = profile.get('name', 'U')
-                            initials = ''.join([word[0].upper() for word in name.split()[:2]])
-                            st.markdown(f"## {initials}")
-                    
-                    with col_info:
-                        st.markdown(f"### {profile.get('name', 'N/A')}")
-                        
-                        # Metadata - structured in separate lines
-                        if profile.get('email'):
-                            st.markdown(f"📧 {profile['email']}")
-                        if profile.get('created_at'):
-                            st.markdown(f"📅 Member since {profile['created_at'][:10]}")
-                        if profile.get('last_login'):
-                            st.markdown(f"🕐 Last login {profile['last_login'][:10]}")
-                    
-                    st.markdown("")
+                # User info card (no border)
+                col_pic, col_info = st.columns([1, 3])
                 
-                # Logout-Button ganz unten in der rechten Spalte
-                with col_right:
-                    st.markdown("---")
-                    if st.button("🚪 Logout", type="secondary", use_container_width=True):
-                        handle_logout()
+                with col_pic:
+                    # Profile picture with fallback
+                    if profile.get('picture') and str(profile['picture']).startswith('http'):
+                        st.image(profile['picture'], width=120)
+                    else:
+                        # Create initials avatar using Streamlit-native approach
+                        name = profile.get('name', 'U')
+                        initials = ''.join([word[0].upper() for word in name.split()[:2]])
+                        st.markdown(f"## {initials}")
+                
+                with col_info:
+                    st.markdown(f"### {profile.get('name', 'N/A')}")
+                    
+                    # Metadata - structured in separate lines
+                    if profile.get('email'):
+                        st.markdown(f"📧 {profile['email']}")
+                    if profile.get('created_at'):
+                        st.markdown(f"📅 Member since {profile['created_at'][:10]}")
+                    if profile.get('last_login'):
+                        st.markdown(f"🕐 Last login {profile['last_login'][:10]}")
+                
+                st.markdown("")
+                st.markdown("---")
+                
+                # Logout button below user information
+                if st.button("🚪 Logout", type="secondary", use_container_width=True):
+                    handle_logout()
 
 # =============================================================================
 # PART 10: TAB 5 - ABOUT
