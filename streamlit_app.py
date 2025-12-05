@@ -230,21 +230,64 @@ with st.sidebar:
                 user_email = ""
                 user_picture = None
             
-            # Display compact, centered user info
-            if user_picture and str(user_picture).startswith('http'):
-                st.image(user_picture, width=50, use_container_width=False)
-            else:
-                # Create initials avatar with circular background
-                name_words = user_name.split()[:2]
-                initials = ''.join([word[0].upper() for word in name_words if word])
-                st.markdown(
-                    f"<div style='text-align: center; font-size: 20px; font-weight: bold; padding: 12px; background-color: #667eea; color: white; border-radius: 50%; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; margin: 0 auto 8px;'>{initials}</div>",
-                    unsafe_allow_html=True
-                )
+            # Create beautiful profile card with modern design
+            name_words = user_name.split()[:2]
+            initials = ''.join([word[0].upper() for word in name_words if word]) if name_words else "U"
             
-            st.markdown(f"<div style='text-align: center;'><strong>{user_name}</strong></div>", unsafe_allow_html=True)
-            st.caption(f"<div style='text-align: center;'>{user_email}</div>", unsafe_allow_html=True)
-            st.markdown("")
+            profile_card_html = f"""
+            <div style="
+                background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+                padding: 20px;
+                border-radius: 16px;
+                margin-bottom: 16px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+                text-align: center;
+            ">
+                <div style="margin-bottom: 12px;">
+            """
+            
+            if user_picture and str(user_picture).startswith('http'):
+                profile_card_html += f"""
+                    <img src="{user_picture}" 
+                         style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.15);"
+                         alt="Profile picture">
+                """
+            else:
+                profile_card_html += f"""
+                    <div style="
+                        width: 80px;
+                        height: 80px;
+                        border-radius: 50%;
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        color: white;
+                        font-size: 32px;
+                        font-weight: bold;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        margin: 0 auto;
+                        border: 3px solid white;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+                    ">{initials}</div>
+                """
+            
+            profile_card_html += f"""
+                </div>
+                <div style="
+                    font-size: 18px;
+                    font-weight: 600;
+                    color: #1f2937;
+                    margin-bottom: 6px;
+                ">{user_name}</div>
+                <div style="
+                    font-size: 13px;
+                    color: #6b7280;
+                    word-break: break-word;
+                ">{user_email}</div>
+            </div>
+            """
+            
+            st.markdown(profile_card_html, unsafe_allow_html=True)
         
         # Separator after user section
         st.markdown("---")
