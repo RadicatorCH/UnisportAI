@@ -131,7 +131,7 @@ def initialize_session_state():
         'selected_weekday': None,
         'selected_location': None,
         'selected_time': None,
-        'hide_cancelled': False,
+        'hide_cancelled': True,  # Hide cancelled events by default
         'min_match_score': 0,
         
         # UI states
@@ -252,18 +252,35 @@ with st.sidebar:
         # Separator after user section
         st.markdown("---")
         # =================================================================
-        # QUICK SEARCH (Always visible)
+        # SPORT FILTER (Always shown first after user section)
         # =================================================================
-        # This simple search box is always shown at the top
-        search_text = st.text_input(
-            "🔎 Quick Search",
-            value=st.session_state.get('search_text', ''),
-            placeholder="Search activities...",
-            key="unified_search_text",
-            help="Search by activity name, location, or trainer"
+        # Get all unique sport names from events
+        sport_names = sorted(set([
+            e.get('sport_name', '') 
+            for e in events 
+            if e.get('sport_name')
+        ]))
+        
+        # Check for pre-selected sports from Sports Overview tab
+        default_sports = []
+        selected_offer = st.session_state.get('selected_offer')
+        if selected_offer:
+            selected_name = selected_offer.get('name', '')
+            if selected_name and selected_name in sport_names:
+                default_sports = [selected_name]
+        
+        selected_sports = st.multiselect(
+            "🏃 Sport",
+            options=sport_names,
+            default=st.session_state.get('offers', default_sports),
+            key="unified_sport",
+            help="Filter by sport/activity"
         )
-        # IMPORTANT: Store in session_state so other tabs can access it
-        st.session_state['search_text'] = search_text
+        st.session_state['offers'] = selected_sports
+        
+        # Hide cancelled events by default (no checkbox needed)
+        if 'hide_cancelled' not in st.session_state:
+            st.session_state['hide_cancelled'] = True
         
         st.markdown("")
         
@@ -370,42 +387,7 @@ with st.sidebar:
                     help="Filter by day of the week"
                 )
                 st.session_state['weekday'] = selected_weekdays
-            
-        # --- Sport Filter ---
-        with st.expander("🏃 Sport & Status", expanded=True):
-                # Get all unique sport names from events
-                sport_names = sorted(set([
-                    e.get('sport_name', '') 
-                    for e in events 
-                    if e.get('sport_name')
-                ]))
-                
-                # Check for pre-selected sports from Sports Overview tab
-                default_sports = []
-                selected_offer = st.session_state.get('selected_offer')
-                if selected_offer:
-                    selected_name = selected_offer.get('name', '')
-                    if selected_name and selected_name in sport_names:
-                        default_sports = [selected_name]
-                
-                selected_sports = st.multiselect(
-                    "Sport",
-                    options=sport_names,
-                    default=st.session_state.get('offers', default_sports),
-                    key="unified_sport"
-                )
-                st.session_state['offers'] = selected_sports
-                
-                st.markdown("")
-                
-                # --- Hide Cancelled Checkbox ---
-                hide_cancelled = st.checkbox(
-                    "🚫 Hide cancelled courses",
-                    value=st.session_state.get('hide_cancelled', True),
-                    key="unified_hide_cancelled"
-                )
-                st.session_state['hide_cancelled'] = hide_cancelled
-            
+        
         # --- Date & Time Filters ---
         with st.expander("📅 Date & Time", expanded=False):
                 st.markdown("**Date Range**")
@@ -1654,7 +1636,7 @@ with tab_details:
         # =====================================================================
         search_text = st.session_state.get('search_text', '')
         selected_sports = st.session_state.get('offers', [])
-        hide_cancelled = st.session_state.get('hide_cancelled', False)  # Show all events by default
+        hide_cancelled = st.session_state.get('hide_cancelled', True)  # Hide cancelled events by default
         date_start = st.session_state.get('date_start', None)
         date_end = st.session_state.get('date_end', None)
         selected_locations = st.session_state.get('location', [])
