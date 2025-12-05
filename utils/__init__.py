@@ -50,9 +50,6 @@ This is a best practice: it controls what other code can access
 # The dot (.) means "from the current package"
 # Relative imports (with .) are preferred over absolute imports in packages
 
-# Database functions
-from .db import get_data_timestamp
-
 # Machine learning functions
 from .ml_utils import load_knn_model, build_user_preferences_from_filters, get_ml_recommendations
 
@@ -67,7 +64,6 @@ from .formatting import create_user_info_card_html
 # It's a way to control what's "public" vs "private" in this package
 # Only the functions listed here will be imported with "import *"
 __all__ = [
-    'get_data_timestamp',
     'load_knn_model',
     'build_user_preferences_from_filters',
     'get_ml_recommendations',

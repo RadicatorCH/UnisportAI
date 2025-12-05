@@ -72,7 +72,6 @@ from utils.auth import (
 
 # Utility functions (refactored from this file)
 from utils import (
-    get_data_timestamp,
     load_knn_model,
     build_user_preferences_from_filters,
     get_ml_recommendations,
@@ -453,8 +452,6 @@ with st.sidebar:
                     help="Only show sports with at least this match percentage"
                 )
                 st.session_state['ml_min_match'] = ml_min_match
-
-# NOTE: get_data_timestamp() is now imported from utils.db
 
 # =============================================================================
 # PART 5: MAIN APP - AUTHENTICATION & DATABASE CHECK
