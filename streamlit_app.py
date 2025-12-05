@@ -194,7 +194,6 @@ with st.sidebar:
             # === NOT LOGGED IN: Show login UI ===
             with st.container():
                 st.markdown("### 🎯 UnisportAI")
-                st.markdown("Sign in to access all features")
             
             # Login button using Streamlit's authentication
             st.button(
@@ -1429,9 +1428,14 @@ with tab_overview:
                     hide_index=True
                 )
                 
+                # Booking link above upcoming dates
+                offer_href = offer.get('href')
+                if offer_href:
+                    st.link_button("🔗 Book this course", offer_href, use_container_width=True)
+                    st.markdown("")  # Add spacing
+                
                 # Show upcoming dates (now directly in the expander, no nested expander)
                 if filtered_count > 0:
-                    st.divider()
                     st.subheader(f"Upcoming Dates ({filtered_count})")
                     
                     # Sort by start time (events are already filtered above)
@@ -1551,6 +1555,12 @@ with tab_details:
     # ACTIVITY INFO SECTION (only for single activity view)
     # =========================================================================
     if selected:
+        # Display course image if available
+        image_url = selected.get('image_url')
+        if image_url:
+            st.image(image_url, use_container_width=True)
+            st.markdown("")  # Add spacing after image
+        
         # Description in expandable section
         description = selected.get('description')
         if description:
@@ -1601,7 +1611,11 @@ with tab_details:
             hide_index=True
         )
         
-        st.divider()
+        # Booking link below upper table
+        offer_href = selected.get('href')
+        if offer_href:
+            st.link_button("🔗 Book this course", offer_href, use_container_width=True)
+            st.markdown("")  # Add spacing
     
     # =========================================================================
     # LOAD EVENTS
@@ -1801,11 +1815,6 @@ with tab_profile:
     # =========================================================================
     if not is_logged_in():
         st.info("🔒 **Login required** - Sign in with Google in the sidebar")
-        
-        st.markdown("""
-        ### What you can do with a profile:
-        - 📋 **View Your Info** - See your account details (name, email, member since)
-        """)
         # Don't use st.stop() - it stops the entire app, preventing other tabs from loading
     else:
         # =========================================================================
