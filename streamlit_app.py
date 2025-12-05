@@ -230,30 +230,20 @@ with st.sidebar:
                 user_email = ""
                 user_picture = None
             
-            # Display user card with profile picture (ohne zusätzlichen violetten Balken)
-            with st.container():
-                # Use columns for picture and info
-                col_pic, col_info = st.columns([1, 3])
-                
-                with col_pic:
-                    if user_picture and str(user_picture).startswith('http'):
-                        st.image(user_picture, width=60)
-                    else:
-                        # Create initials avatar using Streamlit-native approach
-                        name_words = user_name.split()[:2]
-                        initials_list = []
-                        for word in name_words:
-                            if word:
-                                initials_list.append(word[0].upper())
-                        initials = ''.join(initials_list)
-                        # Use a simple text-based approach
-                        st.markdown(f"**{initials}**")
-                
-                with col_info:
-                    st.markdown("**Signed in as**")
-                    st.markdown(f"**{user_name}**")
-                    st.caption(user_email)
+            # Display compact, centered user info
+            if user_picture and str(user_picture).startswith('http'):
+                st.image(user_picture, width=50, use_container_width=False)
+            else:
+                # Create initials avatar with circular background
+                name_words = user_name.split()[:2]
+                initials = ''.join([word[0].upper() for word in name_words if word])
+                st.markdown(
+                    f"<div style='text-align: center; font-size: 20px; font-weight: bold; padding: 12px; background-color: #667eea; color: white; border-radius: 50%; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; margin: 0 auto 8px;'>{initials}</div>",
+                    unsafe_allow_html=True
+                )
             
+            st.markdown(f"<div style='text-align: center;'><strong>{user_name}</strong></div>", unsafe_allow_html=True)
+            st.caption(f"<div style='text-align: center;'>{user_email}</div>", unsafe_allow_html=True)
             st.markdown("")
         
         # Separator after user section
@@ -609,13 +599,11 @@ def render_analytics_section():
                     x=hours_formatted,
                     y=counts,
                     marker_color='#F77F00',
-                    text=counts,
-                    textposition='auto',
                 )
             ])
             fig.update_layout(
                 title=dict(text="Course Availability by Time of Day", x=0.5, xanchor='center', font=dict(size=18, family='Arial', color='#000000')),
-                xaxis_title="Uhrzeit",
+                xaxis_title="Time",
                 yaxis_title="Number of Courses",
                 height=300,
                 margin=dict(l=20, r=20, t=50, b=20),
