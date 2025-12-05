@@ -54,6 +54,15 @@ import joblib
 from pathlib import Path
 from datetime import datetime
 
+# Import filter and db functions at module level to avoid repeated imports
+try:
+    from .filters import filter_offers, filter_events
+    from .db import get_events
+except ImportError:
+    # Fallback for when running as script or if relative imports fail
+    from utils.filters import filter_offers, filter_events
+    from utils.db import get_events
+
 # Feature order (13 features)
 ML_FEATURE_COLUMNS = [
     'balance', 'flexibility', 'coordination', 'relaxation',
@@ -473,9 +482,6 @@ def get_merged_recommendations(
             - 'offer': Complete sport offer dictionary
         Sorted by match_score descending
     """
-    from .filters import filter_offers, filter_events
-    from .db import get_events
-    
     # STEP 1: Get filtered results (hard filters: intensity/focus/setting)
     filtered_results = filter_offers(
         sports_data,
