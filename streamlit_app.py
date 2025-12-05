@@ -532,10 +532,6 @@ def render_analytics_section():
     - AI-powered sport recommendations (if filters are selected)
     - Kursverfügbarkeit nach Wochentag (Bar chart)
     - Kursverfügbarkeit nach Tageszeit (Histogram)
-    - Kursverteilung nach Standort (Bar chart)
-    - Indoor vs. Outdoor (Pie chart)
-    - Intensitäts-Verteilung (Bar chart)
-    - Fokus-Verteilung (Bar chart)
     """
     from utils.db import (
         get_events_by_weekday,
@@ -563,16 +559,12 @@ def render_analytics_section():
     try:
         weekday_data = get_events_by_weekday()
         hour_data = get_events_by_hour()
-        location_data = get_events_by_location()
-        location_type_data = get_events_by_location_type()
-        intensity_data = get_offers_by_intensity()
-        focus_data = get_offers_by_focus()
     except Exception as e:
         st.warning(f"⚠️ Fehler beim Laden der Analytics-Daten: {e}")
         return
     
-    # Create 3 columns for the first row (3 charts)
-    col1, col2, col3 = st.columns(3)
+    # Create 2 columns for the charts
+    col1, col2 = st.columns(2)
     
     with col1:
         # 1. Kursverfügbarkeit nach Wochentag
@@ -628,153 +620,6 @@ def render_analytics_section():
                 plot_bgcolor='rgba(0,0,0,0)',
                 font=dict(family='Inter, system-ui, sans-serif', size=12),
                 xaxis=dict(tickmode='linear', tick0=0, dtick=2, gridcolor='rgba(108, 117, 125, 0.1)', showgrid=True),
-                yaxis=dict(gridcolor='rgba(108, 117, 125, 0.1)', showgrid=True)
-            )
-            st.plotly_chart(fig, width="stretch")
-    
-    with col3:
-        # 3. Indoor vs. Outdoor
-        if location_type_data:
-            types = list(location_type_data.keys())
-            counts = list(location_type_data.values())
-            
-            fig = go.Figure(data=[
-                go.Pie(
-                    labels=types,
-                    values=counts,
-                    marker_colors=['#2E86AB', '#06A77D', '#F77F00']
-                )
-            ])
-            fig.update_layout(
-                title=dict(text="Indoor vs. Outdoor", x=0.5, xanchor='center', font=dict(size=18, family='Arial', color='#000000')),
-                height=300,
-                margin=dict(l=20, r=20, t=50, b=20),
-                paper_bgcolor='#FFFFFF',
-                plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(family='Inter, system-ui, sans-serif', size=12)
-            )
-            st.plotly_chart(fig, width="stretch")
-    
-    # Create 3 columns for the second row (3 charts)
-    col4, col5, col6 = st.columns(3)
-    
-    with col4:
-        # 4. Kursverteilung nach Standort (Top 10)
-        if location_data:
-            # Get top 10 locations
-            top_locations = dict(list(location_data.items())[:10])
-            locations = list(top_locations.keys())
-            counts = list(top_locations.values())
-            
-            fig = go.Figure(data=[
-                go.Bar(
-                    x=counts,
-                    y=locations,
-                    orientation='h',
-                    marker_color='#FCBF49',
-                    text=counts,
-                    textposition='auto',
-                )
-            ])
-            fig.update_layout(
-                title=dict(text="Top 10 Locations", x=0.5, xanchor='center', font=dict(size=18, family='Arial', color='#000000')),
-                xaxis_title="Number of Courses",
-                yaxis_title="Location",
-                height=300,
-                margin=dict(l=20, r=20, t=50, b=20),
-                paper_bgcolor='#FFFFFF',
-                plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(family='Inter, system-ui, sans-serif', size=12),
-                xaxis=dict(gridcolor='rgba(108, 117, 125, 0.1)', showgrid=True),
-                yaxis=dict(gridcolor='rgba(108, 117, 125, 0.1)', showgrid=True)
-            )
-            st.plotly_chart(fig, width="stretch")
-    
-    with col5:
-        # 5. Intensitäts-Verteilung
-        if intensity_data:
-            intensities = list(intensity_data.keys())
-            counts = list(intensity_data.values())
-            
-            # Sort by intensity order
-            intensity_order = ['Low', 'Moderate', 'High']
-            # Create list of tuples for sorting
-            intensity_count_pairs = [(intensities[i], counts[i]) for i in range(len(intensities))]
-            
-            # Sort by intensity order using Python's sorted()
-            sorted_pairs = sorted(intensity_count_pairs, key=lambda x: intensity_order.index(x[0]) if x[0] in intensity_order else 999)
-            
-            # Extract sorted values
-            if sorted_pairs:
-                intensities_list = []
-                counts_list = []
-                for pair in sorted_pairs:
-                    intensities_list.append(pair[0])
-                    counts_list.append(pair[1])
-                intensities = intensities_list
-                counts = counts_list
-            else:
-                intensities = []
-                counts = []
-            
-            # Create gradient colors for intensity levels
-            intensity_colors = []
-            for intensity in intensities:
-                if intensity == 'Low':
-                    intensity_colors.append('#06A77D')
-                elif intensity == 'Moderate':
-                    intensity_colors.append('#FCBF49')
-                else:  # High
-                    intensity_colors.append('#D62828')
-            
-            fig = go.Figure(data=[
-                go.Bar(
-                    x=list(intensities),
-                    y=list(counts),
-                    marker_color=intensity_colors,
-                    text=list(counts),
-                    textposition='auto',
-                )
-            ])
-            fig.update_layout(
-                title=dict(text="Intensity Distribution", x=0.5, xanchor='center', font=dict(size=18, family='Arial', color='#000000')),
-                xaxis_title="Intensity",
-                yaxis_title="Number of Offers",
-                height=300,
-                margin=dict(l=20, r=20, t=50, b=20),
-                paper_bgcolor='#FFFFFF',
-                plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(family='Inter, system-ui, sans-serif', size=12),
-                xaxis=dict(gridcolor='rgba(108, 117, 125, 0.1)', showgrid=True),
-                yaxis=dict(gridcolor='rgba(108, 117, 125, 0.1)', showgrid=True)
-            )
-            st.plotly_chart(fig, width="stretch")
-    
-    with col6:
-        # 6. Fokus-Verteilung
-        if focus_data:
-            focus_areas = list(focus_data.keys())
-            counts = list(focus_data.values())
-            
-            fig = go.Figure(data=[
-                go.Bar(
-                    x=focus_areas,
-                    y=counts,
-                    marker_color='#2E86AB',
-                    text=counts,
-                    textposition='auto',
-                )
-            ])
-            fig.update_layout(
-                title=dict(text="Focus Distribution", x=0.5, xanchor='center', font=dict(size=18, family='Arial', color='#000000')),
-                xaxis_title="Focus Area",
-                yaxis_title="Number of Offers",
-                height=300,
-                margin=dict(l=20, r=20, t=50, b=20),
-                paper_bgcolor='#FFFFFF',
-                plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(family='Inter, system-ui, sans-serif', size=12),
-                xaxis=dict(tickangle=-45, gridcolor='rgba(108, 117, 125, 0.1)', showgrid=True),
                 yaxis=dict(gridcolor='rgba(108, 117, 125, 0.1)', showgrid=True)
             )
             st.plotly_chart(fig, width="stretch")
@@ -2669,30 +2514,31 @@ with tab_about:
                 st.image(member["avatar"], width=180)
                 st.markdown(f"[{member['name']}]({member['url']})")
         
-        # Define tasks
+        # Define tasks (reversed order so first task appears at top)
         tasks = [
-            "Project organization & planning",
-            "Requirements mapping & prototyping",
-            "Frontend",
-            "Machine Learning",
-            "Backend incl. DB",
-            "Code Documentation",
+            "Video & Cut",
             "Testing & Bug-Fixing",
-            "Video & Cut"
+            "Code Documentation",
+            "Backend incl. DB",
+            "Machine Learning",
+            "Frontend",
+            "Requirements mapping & prototyping",
+            "Project organization & planning"
         ]
         
         # Contribution matrix: each row = task, each column = team member
         # Values: 3 = Main Contribution, 2 = Contribution, 1 = Supporting Role
         # Order: Tamara, Till, Sarah, Antonia, Luca
+        # Note: Matrix is reversed to match reversed tasks list
         contribution_matrix = [
-            [3, 3, 3, 3, 3],  # Project organization & planning
-            [3, 1, 2, 2, 1],  # Requirements mapping & prototyping
-            [1, 2, 1, 1, 3],  # Frontend
-            [2, 3, 1, 1, 2],  # Machine Learning
-            [1, 2, 1, 1, 3],  # Backend incl. DB
-            [2, 2, 1, 1, 2],  # Code Documentation
-            [2, 3, 2, 2, 3],  # Testing & Bug-Fixing
             [1, 1, 3, 3, 1],  # Video & Cut
+            [2, 3, 2, 2, 3],  # Testing & Bug-Fixing
+            [2, 2, 1, 1, 2],  # Code Documentation
+            [1, 2, 1, 1, 3],  # Backend incl. DB
+            [2, 3, 1, 1, 2],  # Machine Learning
+            [1, 2, 1, 1, 3],  # Frontend
+            [3, 1, 2, 2, 1],  # Requirements mapping & prototyping
+            [3, 3, 3, 3, 3],  # Project organization & planning
         ]
         
         # Text labels for hover tooltips
@@ -2729,14 +2575,12 @@ with tab_about:
             xaxis=dict(
                 title="Team Members",
                 titlefont=dict(size=14),
-                tickfont=dict(size=12),
-                side='bottom'
+                tickfont=dict(size=12)
             ),
             yaxis=dict(
                 title="",
                 titlefont=dict(size=14),
-                tickfont=dict(size=11),
-                autorange='reversed'  # Reverse order so first task is at top
+                tickfont=dict(size=11)
             ),
             margin=dict(l=220, r=120, t=100, b=80),
             plot_bgcolor='white',
