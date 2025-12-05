@@ -343,7 +343,6 @@ with st.sidebar:
                     key="unified_show_upcoming"
                 )
                 st.session_state['show_upcoming_only'] = show_upcoming
-                st.session_state['show_upcoming_only'] = show_upcoming
         
         # =================================================================
         # COURSE FILTERS (immer anzeigen)
@@ -2115,7 +2114,8 @@ with tab_athletes:
                 # LEFT COLUMN: DISCOVER ATHLETES
                 # =========================================================================
                 with col_left:
-                    st.subheader("🔍 Discover Athletes")
+                    st.subheader("🔍 Discover New Athletes")
+                    st.caption("Find and connect with athletes who have public profiles")
                     
                     # Load public users from database
                     with st.spinner('🔄 Loading athletes...'):
@@ -2125,17 +2125,50 @@ with tab_athletes:
                         st.info("📭 No public profiles available yet.")
                         st.caption("Be the first to make your profile public in Settings!")
                     else:
-                        # Filter out own profile
+                        # Filter out own profile and friends (only if user is logged in)
+                        friend_ids = set()
+                        friends = []
+                        
+                        if current_user_id:
+                            # Get list of friend IDs to exclude them from discover list
+                            try:
+                                friends = get_user_friends(current_user_id)
+                                # Safely extract friend IDs, handling cases where 'id' might be missing
+                                if friends:
+                                    for friend in friends:
+                                        if friend and 'id' in friend and friend['id']:
+                                            friend_ids.add(friend['id'])
+                            except Exception as e:
+                                # If there's an error loading friends, just use empty set
+                                friend_ids = set()
+                                friends = []
+                                st.warning(f"⚠️ Could not load friends list: {e}")
+                        
                         filtered_public_users = []
                         for u in public_users:
-                            if u['id'] != current_user_id:
-                                filtered_public_users.append(u)
+                            # Only include if it's not the current user and not a friend
+                            user_id = u.get('id')
+                            if user_id:
+                                # If no current_user_id, show all public users
+                                if not current_user_id:
+                                    filtered_public_users.append(u)
+                                # Otherwise, filter out own profile and friends
+                                elif user_id != current_user_id and user_id not in friend_ids:
+                                    filtered_public_users.append(u)
                         public_users = filtered_public_users
                         
                         if not public_users:
-                            st.info("📭 No other public profiles available yet.")
-                            st.caption("Check back later as more athletes join the community!")
+                            st.info("📭 No new athletes to discover.")
+                            if friends and len(friends) > 0:
+                                st.caption(f"You're already connected with {len(friends)} athlete{'s' if len(friends) != 1 else ''}. Check 'My Athletes' to see them!")
+                            else:
+                                st.caption("Be the first to make your profile public in Settings!")
                         else:
+                            # Show count of discoverable athletes
+                            athlete_count = len(public_users)
+                            st.caption(f"**{athlete_count} athlete{'s' if athlete_count != 1 else ''} to discover**")
+                            st.markdown("")  # Add spacing
+                            
                             # Display each user as a card
                             for user in public_users:
                                 with st.container(border=True):
@@ -2235,7 +2268,8 @@ with tab_athletes:
                 # =========================================================================
                 with col_right:
                     # My Athletes section
-                    st.subheader("👥 My Athletes")
+                    st.subheader("👥 My Connected Athletes")
+                    st.caption("Athletes you're connected with")
                     
                     # Athlete Requests Expander under the title
                     with st.expander("📩 Athlete Requests", expanded=False):
@@ -2337,6 +2371,8 @@ with tab_athletes:
                                 type="primary"
                             ):
                                 if accept_friend_request(req['id'], req['requester_id'], req['addressee_id']):
+                                    # Clear cache to refresh friends list
+                                    get_user_friends.clear()
                                     st.success("✅ Athlete request accepted!")
                                     st.rerun()
                             
@@ -2354,9 +2390,9 @@ with tab_athletes:
         
         if not friends:
             st.info("👋 No athletes connected yet - start connecting with other athletes!")
-            st.caption("Browse the Discover Athletes section to send athlete requests.")
+            st.caption("Browse the 'Discover Athletes' section to send athlete requests.")
         else:
-            # Remove duplicates by tracking unique IDs
+            # Remove duplicates by tracking unique IDs (do this first)
             seen_ids = set()
             unique_friends = []
             for friend in friends:
@@ -2365,12 +2401,10 @@ with tab_athletes:
                     seen_ids.add(friend_id)
                     unique_friends.append(friend)
             
+            # Show count of connected athletes (after deduplication)
             friend_count = len(unique_friends)
-            if friend_count != 1:
-                athlete_text = "athletes"
-            else:
-                athlete_text = "athlete"
-            st.caption(f"**{friend_count}** {athlete_text}")
+            st.caption(f"**{friend_count} connected athlete{'s' if friend_count != 1 else ''}**")
+            st.markdown("")  # Add spacing
             
             # Display each friend
             for friend in unique_friends:
@@ -2787,4 +2821,3 @@ with tab_about:
 
 # Parts of this codebase were developed with the assistance of AI-based tools (Cursor and Github Copilot)
 # All outputs generated by such systems were reviewed, validated, and modified by the author.
-
