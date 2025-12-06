@@ -70,7 +70,14 @@ class KNNSportRecommender:
         self.is_fitted = False
     
     def load_and_train(self, training_data: List[Dict]):
-        """Load features and train the internal KNN.
+        """Load features and train the internal KNN model.
+        
+        This is the CORE TRAINING LOGIC method of the KNNSportRecommender class.
+        It handles data preprocessing, feature scaling, and KNN model fitting.
+        
+        This method is called by training scripts (e.g., ml/train.py) which
+        handle the orchestration (loading data from database, creating the recommender
+        instance, and saving the model). This method focuses solely on the training logic.
 
         Args:
             training_data: List of sport feature dicts from database.
