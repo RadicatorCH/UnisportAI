@@ -51,11 +51,24 @@ from utils.formatting import parse_event_datetime
 
 def _check_event_matches_filters(event, sport_filter, weekday_filter, date_start, date_end,
                                  time_start, time_end, location_filter, hide_cancelled):
-    """
-    Check if event matches all filters. Internal helper function.
+    """Check if event matches all filters. Internal helper function.
     
-    WHY: Centralizes filter matching logic so it can be reused. All filters must match
+    Centralizes filter matching logic so it can be reused. All filters must match
     (AND logic). Returns False as soon as any filter doesn't match (short-circuit evaluation).
+    
+    Args:
+        event (dict): Event dictionary to check.
+        sport_filter (list, optional): List of sport names to match.
+        weekday_filter (list, optional): List of weekday names to match.
+        date_start (date, optional): Start date for date range filter.
+        date_end (date, optional): End date for date range filter.
+        time_start (time, optional): Start time for time range filter.
+        time_end (time, optional): End time for time range filter.
+        location_filter (list, optional): List of location names to match.
+        hide_cancelled (bool): If True, exclude cancelled events.
+    
+    Returns:
+        bool: True if event matches all filters, False otherwise.
     """
     if sport_filter and event.get('sport_name', '') not in sport_filter:
         return False
@@ -88,14 +101,24 @@ def _check_event_matches_filters(event, sport_filter, weekday_filter, date_start
 
 def filter_offers(offers, show_upcoming_only=True, intensity=None, focus=None, setting=None,
                   max_results=20):
-    """
-    Filter offers by intensity/focus/setting. Returns offers with match_score=100.0.
+    """Filter offers by intensity/focus/setting. Returns offers with match_score=100.0.
     
-    WHY: Filters offers based on user preferences. Only includes offers with meaningful
-    tags (focus, setting, or intensity) for ML compatibility.
+    Filters offers based on user preferences. Only includes offers with meaningful
+    tags (focus, setting, or intensity) for ML compatibility. Applies hard filters
+    (intensity/focus/setting must match exactly), then sets match_score to 100.0 for
+    all filtered offers.
     
-    HOW: Applies hard filters (intensity/focus/setting must match exactly), then sets
-    match_score to 100.0 for all filtered offers. Limits results to max_results.
+    Args:
+        offers (list): List of offer dictionaries to filter.
+        show_upcoming_only (bool, optional): If True, only include offers with future events.
+            Defaults to True.
+        intensity (list, optional): List of intensity values to match.
+        focus (list, optional): List of focus values to match.
+        setting (list, optional): List of setting values to match.
+        max_results (int, optional): Maximum number of results to return. Defaults to 20.
+    
+    Returns:
+        list: List of filtered offer dictionaries with match_score=100.0.
     """
     # Filter offers with meaningful tags and apply hard filters
     filtered = [
@@ -126,14 +149,27 @@ def filter_offers(offers, show_upcoming_only=True, intensity=None, focus=None, s
 
 def filter_events(events, sport_filter=None, weekday_filter=None, date_start=None, date_end=None,
                   time_start=None, time_end=None, location_filter=None, hide_cancelled=True, filters=None):
-    """
-    Filter events. Accepts either filters dict or individual parameters.
+    """Filter events. Accepts either filters dict or individual parameters.
     
-    WHY: Provides flexible API - can pass individual parameters or a filters dictionary.
-    All filters must match (AND logic).
+    Provides flexible API - can pass individual parameters or a filters dictionary.
+    All filters must match (AND logic). Extracts values from filters dict if provided,
+    otherwise uses individual parameters.
     
-    HOW: Extracts values from filters dict if provided, otherwise uses individual parameters.
-    Uses _check_event_matches_filters() to test each event.
+    Args:
+        events (list): List of event dictionaries to filter.
+        sport_filter (list, optional): List of sport names to match.
+        weekday_filter (list, optional): List of weekday names to match.
+        date_start (date, optional): Start date for date range filter.
+        date_end (date, optional): End date for date range filter.
+        time_start (time, optional): Start time for time range filter.
+        time_end (time, optional): End time for time range filter.
+        location_filter (list, optional): List of location names to match.
+        hide_cancelled (bool, optional): If True, exclude cancelled events. Defaults to True.
+        filters (dict, optional): Dictionary containing all filter values. If provided,
+            individual parameters are ignored.
+    
+    Returns:
+        list: List of filtered event dictionaries.
     """
     # Extract values from filters dict if provided, otherwise use individual parameters
     if filters:
@@ -157,14 +193,18 @@ def filter_events(events, sport_filter=None, weekday_filter=None, date_start=Non
 # PURPOSE: Functions for managing filter values in session state
 
 def get_filter_values_from_session():
-    """
-    Extract all filter values from session state.
+    """Extract all filter values from session state.
     
-    WHY: Centralizes reading filter values from session_state. Ensures consistent
-    filter structure across the app.
+    Centralizes reading filter values from session_state. Ensures consistent
+    filter structure across the app. Reads all filter-related keys from session_state
+    and returns a dictionary with standardized key names.
     
-    HOW: Reads all filter-related keys from session_state and returns a dictionary
-    with standardized key names.
+    Returns:
+        dict: Dictionary containing all filter values with keys:
+            - intensity, focus, setting, show_upcoming_only (offer filters)
+            - selected_sports, selected_weekdays, date_start, date_end, time_start,
+              time_end, selected_locations, hide_cancelled (event filters)
+            - min_match_score, ml_min_match (ML filters)
     """
     return {
         # Offer filters
@@ -191,11 +231,25 @@ def get_filter_values_from_session():
 def has_event_filters(filters=None, selected_sports=None, selected_weekdays=None,
                       date_start=None, date_end=None, time_start=None, time_end=None,
                       selected_locations=None, hide_cancelled=None):
-    """
-    Check if any event filters are set. Accepts either filters dict or individual parameters.
+    """Check if any event filters are set. Accepts either filters dict or individual parameters.
     
-    WHY: Used to determine if event filtering should be applied. Helps optimize
+    Used to determine if event filtering should be applied. Helps optimize
     queries by skipping filtering when no filters are set.
+    
+    Args:
+        filters (dict, optional): Dictionary containing filter values. If provided,
+            individual parameters are ignored.
+        selected_sports (list, optional): List of selected sports.
+        selected_weekdays (list, optional): List of selected weekdays.
+        date_start (date, optional): Start date filter.
+        date_end (date, optional): End date filter.
+        time_start (time, optional): Start time filter.
+        time_end (time, optional): End time filter.
+        selected_locations (list, optional): List of selected locations.
+        hide_cancelled (bool, optional): Hide cancelled events flag.
+    
+    Returns:
+        bool: True if any event filter is set, False otherwise.
     """
     if filters:
         return bool(
@@ -239,20 +293,30 @@ FILTER_SESSION_DEFAULTS = {
 }
 
 def get_filter_session_keys():
-    """
-    Return list of all filter-related session state keys.
+    """Return list of all filter-related session state keys.
     
-    WHY: Used by auth module to clear all filter-related session state on logout.
-    Ensures all filter keys are cleared, preventing data leakage between users.
+    Returns:
+        list: List of all filter-related session state key names.
+        
+    Note:
+        Used by auth module to clear all filter-related session state on logout.
+        Ensures all filter keys are cleared, preventing data leakage between users.
     """
     return list(FILTER_SESSION_DEFAULTS.keys())
 
 def has_offer_filters(filters=None):
-    """
-    Check if any offer filters (focus/intensity/setting) are set.
+    """Check if any offer filters (focus/intensity/setting) are set.
     
-    WHY: Used to determine if ML recommendations should be applied. ML is only
-    applied when offer filters are set.
+    Args:
+        filters (dict, optional): Dictionary containing filter values. If None,
+            checks session state directly.
+    
+    Returns:
+        bool: True if any offer filter is set, False otherwise.
+        
+    Note:
+        Used to determine if ML recommendations should be applied. ML is only
+        applied when offer filters are set.
     """
     if filters:
         return bool(filters.get('focus') or filters.get('intensity') or filters.get('setting'))
@@ -264,14 +328,15 @@ def has_offer_filters(filters=None):
     )
 
 def initialize_session_state():
-    """
-    Initialize filter-related session state variables with defaults.
+    """Initialize filter-related session state variables with defaults.
     
-    WHY: All session state keys are explicitly enumerated to ensure consistent
+    All session state keys are explicitly enumerated to ensure consistent
     state management. Missing keys can cause KeyError and inconsistent UI state.
-    
-    HOW: Only sets defaults if key doesn't exist (preserves user selections).
+    Only sets defaults if key doesn't exist (preserves user selections).
     Centralizing defaults provides a single checklist when debugging.
+    
+    Note:
+        Uses FILTER_SESSION_DEFAULTS as the source of truth for all default values.
     """
     # All session state keys are explicitly enumerated to ensure consistent
     # state management. Missing keys can cause KeyError and inconsistent UI state.
@@ -287,14 +352,25 @@ def initialize_session_state():
 # PURPOSE: Functions for applying ML recommendations and scoring
 
 def apply_soft_filters_to_score(match_score, offer, show_upcoming_only=False, filters=None, events_by_sport=None):
-    """
-    Apply soft filters: reduce score by 20% if no future events, 15% if no matching events.
+    """Apply soft filters: reduce score by 20% if no future events, 15% if no matching events.
     
-    WHY: Soft filters reduce match scores instead of completely excluding offers.
+    Soft filters reduce match scores instead of completely excluding offers.
     This allows offers with low scores to still appear if they're close matches.
     
-    HOW: Reduces score by 20% if show_upcoming_only is True and offer has no future events.
-    Reduces by 15% if event filters are set and offer has no matching events.
+    Args:
+        match_score (float): Initial match score (0-100).
+        offer (dict): Offer dictionary.
+        show_upcoming_only (bool, optional): If True, reduce score if no future events.
+            Defaults to False.
+        filters (dict, optional): Event filters dictionary.
+        events_by_sport (dict, optional): Dictionary of events grouped by sport name.
+    
+    Returns:
+        float: Adjusted match score (0-100).
+        
+    Note:
+        Reduces score by 20% if show_upcoming_only is True and offer has no future events.
+        Reduces by 15% if event filters are set and offer has no matching events.
     """
     score = match_score
     if show_upcoming_only and offer.get('future_events_count', 0) == 0:
@@ -308,14 +384,20 @@ def apply_soft_filters_to_score(match_score, offer, show_upcoming_only=False, fi
     return score
 
 def apply_ml_recommendations_to_offers(offers, offers_data, filters):
-    """
-    Apply ML recommendations with fallback thresholds.
+    """Apply ML recommendations with fallback thresholds.
     
-    WHY: If no recommendations are found at the user's minimum match threshold,
-    try lower thresholds to ensure some results are shown.
+    If no recommendations are found at the user's minimum match threshold,
+    try lower thresholds to ensure some results are shown. Tries thresholds
+    in descending order (ml_min_match, 40, 30, 20, 0) until recommendations
+    are found.
     
-    HOW: Tries thresholds in descending order (ml_min_match, 40, 30, 20, 0) until
-    recommendations are found. Returns first non-empty result.
+    Args:
+        offers (list): List of offer dictionaries (currently unused, kept for API compatibility).
+        offers_data (list): List of all available offers from database.
+        filters (dict): Filter dictionary containing ml_min_match and other filter values.
+    
+    Returns:
+        list: List of offer dictionaries with match_score, or empty list if no matches found.
     """
     ml_min_match = filters.get('ml_min_match', 50)
     for threshold in [ml_min_match, 40, 30, 20, 0]:
@@ -325,17 +407,29 @@ def apply_ml_recommendations_to_offers(offers, offers_data, filters):
     return []
 
 def get_merged_recommendations(sports_data, filters, min_match_score=0):
-    """
-    Get merged recommendations combining KNN ML and filtered results.
+    """Get merged recommendations combining KNN ML and filtered results.
     
-    WHY: Combines rule-based filtering (100% matches) with ML recommendations
+    Combines rule-based filtering (100% matches) with ML recommendations
     (similarity-based matches). Filtered results get priority (higher scores).
     
-    HOW:
-    1. Get filtered results (hard filters: intensity/focus/setting)
-    2. Get KNN recommendations for all sports
-    3. Merge both, keeping higher score when sport appears in both
-    4. Apply soft filters and filter by threshold
+    Args:
+        sports_data (list): List of all available sports offers from database.
+        filters (dict): Filter dictionary containing focus, intensity, setting, etc.
+        min_match_score (int, optional): Minimum match score threshold. Defaults to 0.
+    
+    Returns:
+        list: List of recommendation dictionaries sorted by match_score (descending),
+            each containing:
+            - name (str): Sport name
+            - match_score (float): Match score (0-100)
+            - offer (dict): Complete offer dictionary
+    
+    Note:
+        Process:
+        1. Get filtered results (hard filters: intensity/focus/setting)
+        2. Get KNN recommendations for all sports
+        3. Merge both, keeping higher score when sport appears in both
+        4. Apply soft filters and filter by threshold
     """
     import numpy as np
     from utils.ml_utils import load_knn_model, build_user_preferences_from_filters, ML_FEATURE_COLUMNS

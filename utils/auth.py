@@ -19,10 +19,13 @@ from datetime import datetime, timezone
 
 
 def is_logged_in():
-    """
-    Check if a user is currently logged in.
+    """Check if a user is currently logged in.
     
-    WHY: Streamlit automatically sets st.user.is_logged_in to True after successful login.
+    Returns:
+        bool: True if user is logged in, False otherwise.
+        
+    Note:
+        Streamlit automatically sets st.user.is_logged_in to True after successful login.
     """
     return st.user.is_logged_in
 
@@ -32,16 +35,16 @@ def is_logged_in():
 # PURPOSE: Functions for managing user session state
 
 def clear_user_session():
-    """
-    Clear all user-related data from Streamlit's session state.
+    """Clear all user-related data from Streamlit's session state.
     
-    WHY: When a user logs out, all their data must be removed from the app's memory.
-    Without clearing session state, the next user might see the previous user's filters
-    and selections, which is a privacy and security issue.
-    
-    HOW: Clears filter states, app states, and cached data. Streamlit re-runs the script
+    Clears filter states, app states, and cached data. Streamlit re-runs the script
     on every interaction, so if session_state keys are not cleared, ghost filters from
     previous users may appear.
+    
+    Note:
+        When a user logs out, all their data must be removed from the app's memory.
+        Without clearing session state, the next user might see the previous user's filters
+        and selections, which is a privacy and security issue.
     """
     # Clear filter states
     from utils.filters import get_filter_session_keys
@@ -62,10 +65,9 @@ def clear_user_session():
             getattr(st, cache_attr).clear()
 
 def handle_logout():
-    """
-    Perform a complete logout: clear data, log out, and refresh the UI.
+    """Perform a complete logout: clear data, log out, and refresh the UI.
     
-    WHY: This does three things: clears session state, calls Streamlit's logout, and
+    This does three things: clears session state, calls Streamlit's logout, and
     refreshes the page. All three steps are necessary for a complete logout to prevent
     data leakage.
     """
@@ -79,29 +81,37 @@ def handle_logout():
 # PURPOSE: Functions for retrieving user information from authentication
 
 def get_user_sub():
-    """
-    Get the unique user identifier (OIDC "sub" claim).
+    """Get the unique user identifier (OIDC "sub" claim).
     
-    WHY: "Sub" stands for "subject": it's a unique identifier provided by Google.
-    This is part of the OIDC (OpenID Connect) standard. This ID is used to look up
-    the user in the Supabase database and link their data.
+    Returns:
+        str or None: OIDC subject identifier if user is logged in, None otherwise.
+        
+    Note:
+        "Sub" stands for "subject": it's a unique identifier provided by Google.
+        This is part of the OIDC (OpenID Connect) standard. This ID is used to look up
+        the user in the Supabase database and link their data.
     """
     return st.user.sub if is_logged_in() else None
 
 def get_user_email():
-    """
-    Get the authenticated user's email address.
+    """Get the authenticated user's email address.
     
-    WHY: This comes directly from Google's authentication system.
+    Returns:
+        str or None: User's email address if logged in, None otherwise.
+        
+    Note:
+        This comes directly from Google's authentication system.
     """
     return st.user.email if is_logged_in() else None
 
 def check_token_expiry():
-    """
-    Check if the user's authentication token has expired.
+    """Check if the user's authentication token has expired.
     
-    WHY: When logging in, Google provides a token: a special code that proves authentication.
-    Tokens expire for security reasons, so this must be checked periodically.
+    If the token has expired, shows a warning and logs the user out.
+    
+    Note:
+        When logging in, Google provides a token: a special code that proves authentication.
+        Tokens expire for security reasons, so this must be checked periodically.
     """
     if not is_logged_in():
         return
@@ -113,12 +123,23 @@ def check_token_expiry():
         handle_logout()
 
 def get_user_info_dict():
-    """
-    Get all available user information from Streamlit's user object.
+    """Get all available user information from Streamlit's user object.
     
-    WHY: Collects user information from Google authentication and packages it into a dictionary.
-    Use direct access for required fields. Optional fields use getattr() with None as default
-    to avoid errors.
+    Returns:
+        dict or None: Dictionary containing user information with keys:
+            - sub (str): OIDC subject identifier
+            - email (str): User's email address
+            - name (str): User's full name
+            - is_logged_in (bool): Always True if returned
+            - given_name (str, optional): User's first name
+            - family_name (str, optional): User's last name
+            - picture (str, optional): URL to user's profile picture
+        Returns None if user is not logged in.
+        
+    Note:
+        Collects user information from Google authentication and packages it into a dictionary.
+        Use direct access for required fields. Optional fields use getattr() with None as default
+        to avoid errors.
     """
     if not is_logged_in():
         return None
@@ -139,14 +160,16 @@ def get_user_info_dict():
 # PURPOSE: Functions for syncing user data with Supabase
 
 def sync_user_to_supabase():
-    """
-    Save or update user information in the Supabase database.
+    """Save or update user information in the Supabase database.
     
-    WHY: When a user logs in with Google, their information is retrieved and stored in the database.
+    When a user logs in with Google, their information is retrieved and stored in the database.
     Storing user info in the database enables features like favorites and user profiles.
     
-    HOW: This uses an "upsert" pattern (update if exists, insert if new). If name is not available,
+    This uses an "upsert" pattern (update if exists, insert if new). If name is not available,
     use email as fallback. Database operations can fail, so the result is checked.
+    
+    Note:
+        Shows a warning if synchronization fails, but does not raise an exception.
     """
     from utils.db import create_or_update_user
     

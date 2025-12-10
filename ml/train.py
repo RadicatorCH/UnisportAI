@@ -18,8 +18,7 @@ from utils.db import get_ml_training_data_cli
 # PURPOSE: Train and save the KNN recommender model
 
 def train_and_save_model():
-    """
-    Orchestration script to train and save the KNN recommender model.
+    """Orchestration script to train and save the KNN recommender model.
     
     This is a TRAINING PIPELINE SCRIPT that orchestrates the complete workflow:
     1. Loads training data from the database
@@ -30,8 +29,13 @@ def train_and_save_model():
     This script handles the orchestration. The actual training logic is
     implemented in KNNSportRecommender.load_and_train() method.
     
-    HOW: Loads training data from database, creates and trains recommender,
-    then saves the complete model bundle to disk for instant loading in production.
+    Note:
+        Loads training data from database, creates and trains recommender,
+        then saves the complete model bundle to disk for instant loading in production.
+        The model is saved to ml/models/knn_recommender.joblib.
+        
+    Raises:
+        ValueError: If training data cannot be loaded from database.
     """
     print("\n" + "="*60)
     print("KNN SPORT RECOMMENDER - MODEL TRAINING")

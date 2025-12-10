@@ -11,7 +11,7 @@ to obtain human-readable sport recommendations for a given user preferences vect
 HOW IT WORKS:
 - The KNN model uses cosine distance and a StandardScaler to normalize features
   before computing similarities.
-- The code is intentionally lightweight — the primary goal is to return nearest
+- The code is intentionally lightweight, the primary goal is to return nearest
   neighbors (feature-similar sports) rather than train a large classification model.
 
 The main class is KNNSportRecommender which exposes load_and_train(),
@@ -45,16 +45,19 @@ FEATURE_COLUMNS = [
 # PURPOSE: Main class for KNN-based sport recommendations
 
 class KNNSportRecommender:
-    """
-    Machine Learning Recommender using K-Nearest Neighbors.
+    """Machine Learning Recommender using K-Nearest Neighbors.
+    
     Finds sports most similar to user preferences based on feature vectors.
+    Uses cosine distance and StandardScaler to normalize features before computing similarities.
+    The code is intentionally lightweight, the primary goal is to return nearest
+    neighbors (feature-similar sports) rather than train a large classification model.
     """
     
     def __init__(self, n_neighbors=10):
         """Initialize the KNN recommender.
         
         Args:
-            n_neighbors: Number of similar sports to find (default: 10)
+            n_neighbors (int, optional): Number of similar sports to find. Defaults to 10.
         """
         self.n_neighbors = n_neighbors
         # Use cosine similarity ideal for preference vectors
@@ -80,12 +83,20 @@ class KNNSportRecommender:
         instance, and saving the model). This method focuses solely on the training logic.
 
         Args:
-            training_data: List of sport feature dicts from database.
-                          Must be loaded via utils.db.get_ml_training_data_cli()
-                          or equivalent database access layer function.
+            training_data (List[Dict]): List of sport feature dicts from database.
+                Must be loaded via utils.db.get_ml_training_data_cli()
+                or equivalent database access layer function.
 
         Raises:
             ValueError: If no training data is available.
+            
+        Note:
+            Process:
+            1. Convert training data to DataFrame
+            2. Filter out entries with all features = 0 (e.g. locker rentals)
+            3. Extract feature matrix and handle missing values
+            4. Scale features using StandardScaler (mean=0, std=1)
+            5. Train KNN model on scaled features
         """
         if not training_data:
             raise ValueError("No training data provided. Load data via utils.db.get_ml_training_data_cli()")
@@ -121,15 +132,27 @@ class KNNSportRecommender:
         print(f"KNN model trained with {len(self.sports_df)} sports")
     
     def get_recommendations(self, user_preferences: dict, top_n: int = 5):
-        """
-        Get sport recommendations using trained KNN model.
+        """Get sport recommendations using trained KNN model.
         
         Args:
-            user_preferences: Dict with feature values (keys from FEATURE_COLUMNS)
-            top_n: Number of recommendations to return
+            user_preferences (dict): Dictionary with feature values (keys from FEATURE_COLUMNS).
+                Each key should map to a numeric value (0.0 to 1.0 for most features).
+            top_n (int, optional): Number of recommendations to return. Defaults to 5.
             
         Returns:
-            List of dicts with 'sport' (name) and 'match_score' (0-100%)
+            list: List of dictionaries, each containing:
+                - 'sport' (str): Sport name
+                - 'match_score' (float): Similarity score (0-100%), where 100% = perfect match
+                
+        Raises:
+            ValueError: If called before the model is trained.
+            
+        Note:
+            Process:
+            1. Build user feature vector from preferences dict
+            2. Apply same scaling transformation used during training
+            3. Find K nearest neighbors in the feature space
+            4. Convert distances to similarity percentages (lower distance = higher similarity)
         """
         if not self.is_fitted:
             raise ValueError("Model not trained. Call load_and_train() first.")
@@ -164,13 +187,22 @@ class KNNSportRecommender:
 
         Writes a joblib file containing the fitted KNN object, the
         scaler, the training DataFrame and metadata required to reload
-        the recommender with :meth:`load_model`.
+        the recommender with load_model().
 
         Args:
-            path: File path where the model bundle is saved.
+            path (str, optional): File path where the model bundle is saved.
+                Defaults to "knn_recommender.joblib".
 
         Raises:
             ValueError: If called before the model is trained.
+            
+        Note:
+            The saved bundle contains:
+            - knn_model: Fitted KNN model
+            - scaler: Fitted StandardScaler
+            - sports_df: Training DataFrame with all sports
+            - feature_columns: List of feature column names
+            - n_neighbors: Number of neighbors used
         """
         if not self.is_fitted:
             raise ValueError("Model not trained. Call load_and_train() first.")
@@ -190,15 +222,16 @@ class KNNSportRecommender:
         """Load a saved recommender bundle from disk.
 
         This is a convenience loader that reconstructs a
-        :class:`KNNSportRecommender` instance from the joblib payload
-        created by :meth:`save_model`.
+        KNNSportRecommender instance from the joblib payload
+        created by save_model().
 
         Args:
-            path: Path to the joblib file.
+            path (str, optional): Path to the joblib file.
+                Defaults to "knn_recommender.joblib".
 
         Returns:
             KNNSportRecommender: A recommender instance marked as
-            fitted and ready to call :meth:`get_recommendations`.
+            fitted and ready to call get_recommendations().
         """
         data = joblib.load(path)
         

@@ -20,14 +20,19 @@ import streamlit as st
 
 
 def format_intensity_display(intensity_value):
-    """
-    Format intensity value with emoji indicator.
+    """Format intensity value with emoji indicator.
     
     Args:
-        intensity_value: String or None representing intensity level (e.g., 'low', 'medium', 'high')
+        intensity_value (str or None): Intensity level (e.g., 'low', 'medium', 'high').
     
     Returns:
-        Formatted string with emoji and capitalized intensity (e.g., "🟢 Low") or "N/A"
+        str: Formatted string with emoji and capitalized intensity (e.g., "🟢 Low") or "N/A".
+        
+    Example:
+        >>> format_intensity_display('high')
+        '🔴 High'
+        >>> format_intensity_display(None)
+        'N/A'
     """
     if not intensity_value:
         return "N/A"
@@ -39,17 +44,18 @@ def format_intensity_display(intensity_value):
 
 
 def _format_list_display(items, max_items=2, show_count=True, extract_name=None):
-    """
-    Generic helper function to format lists for display.
+    """Generic helper function to format lists for display.
     
     Args:
-        items: List of items to format
-        max_items: Maximum number of items to show
-        show_count: If True, show "+X" count when more items exist
-        extract_name: Optional function to extract name from item (for dicts)
+        items (list): List of items to format.
+        max_items (int, optional): Maximum number of items to show. Defaults to 2.
+        show_count (bool, optional): If True, show "+X" count when more items exist.
+            Defaults to True.
+        extract_name (callable, optional): Function to extract name from item (for dicts).
+            Defaults to None.
     
     Returns:
-        Formatted string or "N/A" if empty
+        str: Formatted string with comma-separated items, or "N/A" if empty.
     """
     if not items:
         return "N/A"
@@ -77,40 +83,49 @@ def _format_list_display(items, max_items=2, show_count=True, extract_name=None)
 
 
 def format_focus_display(focus_list):
-    """
-    Format focus list for display (shows max 2 items + count if more).
+    """Format focus list for display (shows max 2 items + count if more).
     
     Args:
-        focus_list: List of focus area strings (e.g., ['strength', 'endurance'])
+        focus_list (list): List of focus area strings (e.g., ['strength', 'endurance']).
     
     Returns:
-        Formatted string (e.g., "Strength, Endurance" or "Strength, Endurance +2")
+        str: Formatted string (e.g., "Strength, Endurance" or "Strength, Endurance +2").
+        
+    Example:
+        >>> format_focus_display(['strength', 'endurance', 'flexibility'])
+        'Strength, Endurance +1'
     """
     return _format_list_display(focus_list, max_items=2, show_count=True)
 
 
 def format_setting_display(setting_list):
-    """
-    Format setting list for display (shows max 2 items).
+    """Format setting list for display (shows max 2 items).
     
     Args:
-        setting_list: List of setting strings (e.g., ['solo', 'team'])
+        setting_list (list): List of setting strings (e.g., ['solo', 'team']).
     
     Returns:
-        Formatted string (e.g., "Solo, Team")
+        str: Formatted string (e.g., "Solo, Team").
+        
+    Example:
+        >>> format_setting_display(['solo', 'team'])
+        'Solo, Team'
     """
     return _format_list_display(setting_list, max_items=2, show_count=False)
 
 
 def format_trainers_display(trainers_list):
-    """
-    Format trainers list for display (shows max 2 names + count if more).
+    """Format trainers list for display (shows max 2 names + count if more).
     
     Args:
-        trainers_list: List of trainer dictionaries with 'name' key or strings
+        trainers_list (list): List of trainer dictionaries with 'name' key or strings.
     
     Returns:
-        Formatted string (e.g., "John Doe, Jane Smith" or "John Doe, Jane Smith +3")
+        str: Formatted string (e.g., "John Doe, Jane Smith" or "John Doe, Jane Smith +3").
+        
+    Example:
+        >>> format_trainers_display([{'name': 'John Doe'}, {'name': 'Jane Smith'}, {'name': 'Bob'}])
+        'John Doe, Jane Smith +1'
     """
     def extract_trainer_name(item):
         if isinstance(item, dict):
@@ -121,25 +136,30 @@ def format_trainers_display(trainers_list):
 
 
 def create_offer_metadata_df(offer, match_score=None, include_trainers=None, upcoming_count=None):
-    """
-    Create a pandas DataFrame with offer metadata for display.
+    """Create a pandas DataFrame with offer metadata for display.
     
-    This function formats all offer metadata (intensity, focus, setting, trainers)
+    Formats all offer metadata (intensity, focus, setting, trainers)
     and creates a single-row DataFrame suitable for display in Streamlit.
     
     Args:
-        offer: Dictionary containing offer data with keys:
+        offer (dict): Dictionary containing offer data with keys:
             - 'intensity': Intensity level string
             - 'focus': List of focus areas
             - 'setting': List of settings
             - 'trainers': List of trainer dictionaries or strings
-        match_score: Optional match score (0-100) to include in the DataFrame
-        include_trainers: Optional boolean to explicitly control trainer inclusion.
+        match_score (float, optional): Match score (0-100) to include in the DataFrame.
+        include_trainers (bool, optional): Explicitly control trainer inclusion.
             If None, trainers are included when match_score is provided.
-        upcoming_count: Optional count of upcoming events to include
+        upcoming_count (int, optional): Count of upcoming events to include.
     
     Returns:
-        pandas DataFrame with single row containing formatted metadata
+        pd.DataFrame: DataFrame with single row containing formatted metadata columns:
+            - Match (if match_score provided)
+            - Intensity
+            - Focus
+            - Setting
+            - Upcoming (if upcoming_count provided)
+            - Trainers (if include_trainers is True or match_score is provided)
     """
     # Format intensity
     intensity_value = offer.get('intensity') or ''
@@ -179,21 +199,22 @@ def create_offer_metadata_df(offer, match_score=None, include_trainers=None, upc
 
 
 def parse_event_datetime(datetime_string):
-    """
-    Parse an ISO format datetime string from event data.
+    """Parse an ISO format datetime string from event data.
     
     Handles timezone conversion by replacing 'Z' with '+00:00' for proper
     datetime parsing. This is needed because some databases return 'Z' format
     which Python's fromisoformat() doesn't handle directly.
     
     Args:
-        datetime_string: ISO format datetime string (may include 'Z' timezone)
+        datetime_string (str or datetime): ISO format datetime string (may include 'Z' timezone)
+            or already-parsed datetime object.
     
     Returns:
-        datetime object
-    
+        datetime: Parsed datetime object.
+        
     Example:
-        parse_event_datetime("2025-01-15T10:30:00Z") -> datetime(2025, 1, 15, 10, 30, 0)
+        >>> parse_event_datetime("2025-01-15T10:30:00Z")
+        datetime.datetime(2025, 1, 15, 10, 30, 0, tzinfo=datetime.timezone.utc)
     """
     if isinstance(datetime_string, str):
         # Replace 'Z' with '+00:00' for proper timezone handling
@@ -203,20 +224,21 @@ def parse_event_datetime(datetime_string):
 
 
 def format_weekday(datetime_obj, abbreviated=False):
-    """
-    Format weekday from a datetime object.
+    """Format weekday from a datetime object.
     
     Args:
-        datetime_obj: datetime object
-        abbreviated: If True, returns abbreviated form (Mon, Tue, etc.)
-                    If False, returns full name (Monday, Tuesday, etc.)
+        datetime_obj (datetime): Datetime object to extract weekday from.
+        abbreviated (bool, optional): If True, returns abbreviated form (Mon, Tue, etc.).
+            If False, returns full name (Monday, Tuesday, etc.). Defaults to False.
     
     Returns:
-        String with weekday name
-    
+        str: Weekday name (full or abbreviated).
+        
     Example:
-        format_weekday(datetime(2025, 1, 15), abbreviated=True) -> "Wed"
-        format_weekday(datetime(2025, 1, 15), abbreviated=False) -> "Wednesday"
+        >>> format_weekday(datetime(2025, 1, 15), abbreviated=True)
+        'Wed'
+        >>> format_weekday(datetime(2025, 1, 15), abbreviated=False)
+        'Wednesday'
     """
     weekday_name = datetime_obj.strftime('%A')
     
@@ -236,19 +258,20 @@ def format_weekday(datetime_obj, abbreviated=False):
 
 
 def format_time_range(start_dt, end_dt=None):
-    """
-    Format time or time range from datetime objects.
+    """Format time or time range from datetime objects.
     
     Args:
-        start_dt: datetime object for start time
-        end_dt: Optional datetime object for end time
+        start_dt (datetime): Datetime object for start time.
+        end_dt (datetime, optional): Datetime object for end time. Defaults to None.
     
     Returns:
-        String with formatted time (e.g., "10:30" or "10:30 - 12:00")
-    
+        str: Formatted time string (e.g., "10:30" or "10:30 - 12:00").
+        
     Example:
-        format_time_range(datetime(2025, 1, 15, 10, 30)) -> "10:30"
-        format_time_range(datetime(2025, 1, 15, 10, 30), datetime(2025, 1, 15, 12, 0)) -> "10:30 - 12:00"
+        >>> format_time_range(datetime(2025, 1, 15, 10, 30))
+        '10:30'
+        >>> format_time_range(datetime(2025, 1, 15, 10, 30), datetime(2025, 1, 15, 12, 0))
+        '10:30 - 12:00'
     """
     start_time_str = start_dt.strftime('%H:%M')
     
@@ -260,19 +283,21 @@ def format_time_range(start_dt, end_dt=None):
 
 
 def get_match_score_style(match_score):
-    """
-    Get CSS style string for match score badge based on score value.
+    """Get CSS style string for match score badge based on score value.
     
     Args:
-        match_score: Numeric score (0-100)
+        match_score (float): Numeric score (0-100).
     
     Returns:
-        CSS style string for the badge
-    
+        str: CSS style string for the badge with background-color and color properties.
+        
     Example:
-        style = get_match_score_style(95)  # Returns green style
-        style = get_match_score_style(75)  # Returns yellow style
-        style = get_match_score_style(50)  # Returns gray style
+        >>> get_match_score_style(95)  # Returns green style
+        'background-color: #dcfce7; color: #166534;'
+        >>> get_match_score_style(75)  # Returns yellow style
+        'background-color: #fef9c3; color: #854d0e;'
+        >>> get_match_score_style(50)  # Returns gray style
+        'background-color: #f3f4f6; color: #374151;'
     """
     if match_score >= 90:
         return 'background-color: #dcfce7; color: #166534;'
@@ -283,17 +308,19 @@ def get_match_score_style(match_score):
 
 
 def render_user_avatar(user_name, user_picture=None, size='large'):
-    """
-    Render user avatar (image or initials) in Streamlit.
+    """Render user avatar (image or initials) in Streamlit.
     
     Args:
-        user_name: User's name (for generating initials)
-        user_picture: Optional URL or path to user picture
-        size: 'large' (default) or 'small' - affects heading size
-    
+        user_name (str): User's name (for generating initials).
+        user_picture (str, optional): URL or path to user picture. Defaults to None.
+        size (str, optional): 'large' (default) or 'small' - affects heading size.
+            Defaults to 'large'.
+        
     Example:
-        render_user_avatar("John Doe", "https://example.com/pic.jpg")
-        render_user_avatar("Jane Smith")  # Shows initials
+        >>> render_user_avatar("John Doe", "https://example.com/pic.jpg")
+        # Renders image
+        >>> render_user_avatar("Jane Smith")  # Shows initials
+        # Renders "JS" as heading
     """
     if user_picture and str(user_picture).startswith('http'):
         if size == 'small':
@@ -311,26 +338,34 @@ def render_user_avatar(user_name, user_picture=None, size='large'):
 
 
 def convert_events_to_table_data(events, abbreviated_weekday=True, include_status=False, include_sport=False, include_trainers=False):
-    """
-    Convert list of event dictionaries to table-ready data format.
+    """Convert list of event dictionaries to table-ready data format.
     
-    This function handles parsing datetime strings, formatting times and weekdays,
+    Handles parsing datetime strings, formatting times and weekdays,
     and creating a consistent structure for displaying events in Streamlit dataframes.
     
     Args:
-        events: List of event dictionaries with 'start_time', 'end_time', etc.
-        abbreviated_weekday: If True, use abbreviated weekday (e.g., "Mon"), else full name
-        include_status: If True, include 'status' field (Active/Cancelled)
-        include_sport: If True, include 'sport' field
-        include_trainers: If True, include 'trainers' field
+        events (list): List of event dictionaries with 'start_time', 'end_time', etc.
+        abbreviated_weekday (bool, optional): If True, use abbreviated weekday (e.g., "Mon"),
+            else full name. Defaults to True.
+        include_status (bool, optional): If True, include 'status' field (Active/Cancelled).
+            Defaults to False.
+        include_sport (bool, optional): If True, include 'sport' field. Defaults to False.
+        include_trainers (bool, optional): If True, include 'trainers' field. Defaults to False.
     
     Returns:
-        List of dictionaries ready for st.dataframe()
-    
+        list: List of dictionaries ready for st.dataframe(), each containing:
+            - date: date object
+            - time: time string (e.g., "10:00" or "10:00 - 12:00")
+            - weekday: weekday string
+            - location: location name
+            - status: "Active" or "Cancelled" (if include_status=True)
+            - sport: sport name (if include_sport=True)
+            - trainers: comma-separated trainer names (if include_trainers=True)
+        
     Example:
-        events = [{'start_time': '2025-01-15T10:00:00Z', 'end_time': '2025-01-15T12:00:00Z', ...}]
-        table_data = convert_events_to_table_data(events, abbreviated_weekday=True)
-        st.dataframe(table_data)
+        >>> events = [{'start_time': '2025-01-15T10:00:00Z', 'end_time': '2025-01-15T12:00:00Z', ...}]
+        >>> table_data = convert_events_to_table_data(events, abbreviated_weekday=True)
+        >>> st.dataframe(table_data)
     """
     table_data = []
     for event in events:

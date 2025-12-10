@@ -69,7 +69,7 @@ jobs:
           else
             # If requirements.txt is missing, install the packages we know we need
             # This is a fallback in case something goes wrong
-            echo "requirements.txt missing – installing minimal dependencies"
+            echo "requirements.txt missing, installing minimal dependencies"
             pip install requests beautifulsoup4 lxml python-dateutil supabase streamlit icalendar python-dotenv urllib3
           fi
 

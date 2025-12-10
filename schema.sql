@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS public.kurs_trainer (
 -- 5. ETL bookkeeping
 -- ---------------------------------------------------------------------
 -- `etl_runs` tracks when which scraping / ingestion component last ran.
--- This is intentionally minimal – it can be joined with external logs
+-- This is intentionally minimal, it can be joined with external logs
 -- and dashboards for monitoring.
 
 CREATE TABLE IF NOT EXISTS public.etl_runs (

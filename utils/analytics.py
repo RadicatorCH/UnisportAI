@@ -26,13 +26,17 @@ from pathlib import Path
 # PURPOSE: Functions for rendering analytics charts and recommendations
 
 def render_analytics_section():
-    """
-    Render analytics visualizations with AI recommendations and 6 charts.
+    """Render analytics visualizations with AI recommendations and charts.
     
-    This function displays:
+    Displays:
     - AI-powered sport recommendations (if filters are selected)
-    - Kursverfügbarkeit nach Wochentag (Bar chart)
-    - Kursverfügbarkeit nach Tageszeit (Histogram)
+    - Course availability by weekday (Bar chart)
+    - Course availability by time of day (Histogram)
+    
+    Note:
+        This function reads filter values from session state and displays
+        recommendations only if offer filters (focus/intensity/setting) are set.
+        Chart configurations use Plotly with custom styling for consistent appearance.
     """
     # Get filter state from session_state for AI recommendations
     filters = get_filter_values_from_session()
@@ -582,21 +586,27 @@ def render_analytics_section():
 
 
 def render_team_contribution_matrix(team_members, assets_path):
-    """
-    Render a team contribution matrix heatmap showing each team member's contribution to different tasks.
+    """Render a team contribution matrix heatmap showing each team member's contribution to different tasks.
     
-    This function creates a Plotly heatmap visualization that displays the contribution level
-    of each team member across different project tasks. Contribution levels are:
-    - 3 = Main Contribution
-    - 2 = Contribution
-    - 1 = Supporting Role
+    Creates a Plotly heatmap visualization that displays the contribution level
+    of each team member across different project tasks.
     
     Args:
-        team_members: List of dictionaries, each containing:
-            - 'name': Full name of team member
-            - 'url': LinkedIn profile URL
-            - 'avatar': Path to avatar image
-        assets_path: Path object pointing to the assets/images directory
+        team_members (list): List of dictionaries, each containing:
+            - 'name' (str): Full name of team member
+            - 'url' (str): LinkedIn profile URL
+            - 'avatar' (str): Path to avatar image
+        assets_path (Path): Path object pointing to the assets/images directory.
+            Currently unused but kept for API compatibility.
+        
+    Note:
+        Contribution levels are:
+        - 3 = Main Contribution (Blue)
+        - 2 = Contribution (Green)
+        - 1 = Supporting Role (Orange)
+        
+        The heatmap displays tasks on the y-axis and team members on the x-axis.
+        Hover tooltips show the contribution level for each cell.
     """
     # Define tasks (reversed order so first task appears at top)
     tasks = [

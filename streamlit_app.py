@@ -36,7 +36,7 @@ from pathlib import Path
 # datetime for handling times
 from datetime import time
 
-# Custom authentication functions
+# Authentication functions
 from utils.auth import (
     is_logged_in, 
     sync_user_to_supabase, 
@@ -45,27 +45,34 @@ from utils.auth import (
     get_user_sub
 )
 
-# Utility functions (filtering, formatting, etc.)
-from utils import (
+# Filtering functions
+from utils.filters import (
     filter_events,
     get_filter_values_from_session,
     has_event_filters,
+    initialize_session_state
+)
+
+# Formatting functions
+from utils.formatting import (
     create_offer_metadata_df,
     get_match_score_style,
     render_user_avatar,
-    convert_events_to_table_data,
-    initialize_session_state,
-    load_and_filter_offers,
-    load_and_filter_events
+    convert_events_to_table_data
 )
 
-# Analytics visualizations
-from utils.analytics import render_analytics_section, render_team_contribution_matrix
+# Analytics functions
+from utils.analytics import (
+    render_analytics_section,
+    render_team_contribution_matrix
+)
 
 # Database functions
 from utils.db import (
     get_user_complete,
-    get_events_grouped_by_offer
+    get_events_grouped_by_offer,
+    load_and_filter_offers,
+    load_and_filter_events
 )
 
 # =============================================================================

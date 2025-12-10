@@ -391,7 +391,7 @@ def main():
         else:
             # Empty result list is a hard error for the production pipeline,
             # because then all location-related analytics would run into the void.
-            print("Error: No locations extracted from website – aborting scraper run.")
+            print("Error: No locations extracted from website - aborting scraper run.")
             sys.exit(1)
     except Exception as e:
         # In case of error, abort with exit code != 0, so the GitHub Action run fails.

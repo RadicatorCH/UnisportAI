@@ -40,7 +40,16 @@ logger = logging.getLogger(__name__)
 
 @st.cache_resource
 def supaconn():
-    """Get cached Supabase database connection."""
+    """Get cached Supabase database connection.
+    
+    Returns:
+        SupabaseConnection: Cached Supabase connection instance.
+        
+    Note:
+        Uses @st.cache_resource to ensure only one connection per user session.
+        Streamlit reruns scripts on each interaction, so caching prevents
+        creating multiple connections which would degrade performance.
+    """
     return st.connection("supabase", type=SupabaseConnection)
 
 # =============================================================================
@@ -49,22 +58,31 @@ def supaconn():
 # PURPOSE: Internal utility functions used by public database functions
 
 def _sort_dict_by_count_desc(counts_dict):
-    """
-    Sort dictionary by values in descending order.
+    """Sort dictionary by values in descending order.
     
-    WHY: Used for analytics functions that need to display counts sorted by frequency.
-    Returns a new dictionary sorted by count (highest first).
+    Args:
+        counts_dict (dict): Dictionary with numeric values to sort.
+    
+    Returns:
+        dict: New dictionary sorted by values in descending order (highest first).
+        
+    Note:
+        Used for analytics functions that need to display counts sorted by frequency.
     """
     sorted_items = sorted(counts_dict.items(), key=lambda x: x[1], reverse=True)
     return dict(sorted_items)
 
 def _handle_db_error(e, context="database operation"):
-    """
-    Centralized error handling for database operations.
+    """Centralized error handling for database operations.
     
-    WHY: Provides consistent error messages and helps identify configuration vs. runtime errors.
+    Provides consistent error messages and helps identify configuration vs. runtime errors.
     Database queries can fail for various reasons (network, auth, config), so we need
     to handle them gracefully and provide helpful error messages to users.
+    
+    Args:
+        e (Exception): The exception that occurred.
+        context (str, optional): Description of the operation that failed. 
+                                 Defaults to "database operation".
     """
     error_message = str(e)
     logger.error(f"Error in {context}: {error_message}")
@@ -82,21 +100,35 @@ def _handle_db_error(e, context="database operation"):
         st.error(f"⚠️ **Failed to {context}**\n\nError: {error_message[:200]}")
 
 def _get_user_id(user_sub):
-    """
-    Resolve user_id from user_sub. Returns None if not found.
+    """Resolve user_id from user_sub.
     
-    WHY: Internal helper to convert OIDC sub (external ID) to internal database user_id.
-    Database queries can fail, so error handling is important.
+    Internal helper to convert OIDC sub (external ID) to internal database user_id.
+    
+    Args:
+        user_sub (str): OIDC subject identifier (external user ID).
+    
+    Returns:
+        int or None: Internal database user_id if found, None otherwise.
+        
+    Note:
+        Database queries can fail, so error handling is important.
     """
     result = supaconn().table("users").select("id").eq("sub", user_sub).execute()
     return result.data[0]['id'] if result.data else None
 
 def _has_sport_features(offer):
-    """
-    Check if offer has at least one sport feature (focus, setting, or intensity).
+    """Check if offer has at least one sport feature (focus, setting, or intensity).
     
-    WHY: Some offers don't have focus, setting, or intensity, so we filter those out
-    to only show offers that can be used for ML recommendations.
+    Args:
+        offer (dict): Offer dictionary from database.
+    
+    Returns:
+        bool: True if offer has at least one feature (focus, setting, or intensity),
+              False otherwise.
+        
+    Note:
+        Some offers don't have focus, setting, or intensity, so we filter those out
+        to only show offers that can be used for ML recommendations.
     """
     focus_list = offer.get('focus')
     has_focus = any(f and f.strip() for f in focus_list) if focus_list else False
@@ -110,11 +142,19 @@ def _has_sport_features(offer):
     return has_focus or has_setting or has_intensity
 
 def _convert_event_fields(event):
-    """
-    Convert event fields from database format to UI format.
+    """Convert event fields from database format to UI format.
     
-    WHY: The database view returns trainers as JSON, we convert it to a list of names
-    for easier display in the UI. Also handles field name mapping (kurs_details → details).
+    Args:
+        event (dict): Event dictionary from database.
+    
+    Returns:
+        dict: Event dictionary with converted fields:
+            - trainers: Converted from JSON to list of trainer names
+            - details: Copied from kurs_details if present
+    
+    Note:
+        The database view returns trainers as JSON, we convert it to a list of names
+        for easier display in the UI. Also handles field name mapping (kurs_details → details).
     """
     # Parse trainers from JSON string or use list directly
     trainers_raw = event.get('trainers', '[]')
@@ -135,12 +175,17 @@ def _convert_event_fields(event):
 # PURPOSE: Functions for managing user data in the database
 
 def create_or_update_user(user_data):
-    """
-    Create or update user row in users table based on OIDC sub.
+    """Create or update user row in users table based on OIDC sub.
     
-    WHY: Implements an "upsert" pattern: update if the user exists, insert if new.
+    Implements an "upsert" pattern: update if the user exists, insert if new.
     This is needed because users can log in multiple times, and we want to update
     their last_login timestamp and other info without creating duplicates.
+    
+    Args:
+        user_data (dict): User data dictionary containing 'sub' and other user fields.
+    
+    Returns:
+        dict or None: Created or updated user record, or None if user_sub is missing.
     """
     user_sub = user_data.get('sub')
     if not user_sub:
@@ -163,13 +208,20 @@ def create_or_update_user(user_data):
 # PURPOSE: Functions for loading ML training data
 
 def get_ml_training_data_cli():
-    """
-    Load ML training data for CLI scripts (without Streamlit).
+    """Load ML training data for CLI scripts (without Streamlit).
     
-    WHY: This is used by scripts that run outside of Streamlit (e.g., train.py),
+    This is used by scripts that run outside of Streamlit (e.g., train.py),
     so they need to create their own connection. Reads credentials from .streamlit/secrets.toml.
     
-    HOW: Creates a direct Supabase client connection (not using Streamlit's connection manager).
+    Returns:
+        list: List of sport feature dictionaries from ml_training_data view.
+    
+    Raises:
+        ValueError: If SUPABASE_URL or SUPABASE_KEY are not set in secrets.toml,
+                    or if no data is found in ml_training_data view.
+        
+    Note:
+        Creates a direct Supabase client connection (not using Streamlit's connection manager).
     """
     from supabase import create_client
     
@@ -181,7 +233,7 @@ def get_ml_training_data_cli():
     supabase_url = None
     supabase_key = None
 
-    # Standard-Quelle für CLI-Skripte ist secrets.toml – exakt wie bei der Streamlit-App.
+    # WHY: CLI scripts use secrets.toml as standard source, same as Streamlit app
     if secrets_path.exists():
         with secrets_path.open("r", encoding="utf-8") as f:
             for line in f:
@@ -211,14 +263,18 @@ def get_ml_training_data_cli():
 
 @st.cache_data(ttl=300)
 def get_offers_complete():
-    """
-    Load all offer data from vw_offers_complete view.
+    """Load all offer data from vw_offers_complete view.
     
-    WHY: Database views combine data from multiple tables, making queries simpler.
+    Database views combine data from multiple tables, making queries simpler.
     Cached for 300 seconds because offers don't change very often, reducing database load.
+    Filters offers to only include those with sport features (focus/setting/intensity)
+    for ML compatibility.
     
-    HOW: Filters offers to only include those with sport features (focus/setting/intensity)
-    for ML compatibility. Database queries can fail, so we use try/except for error handling.
+    Returns:
+        list: List of offer dictionaries with sport features, or empty list on error.
+        
+    Note:
+        Database queries can fail, so we use try/except for error handling.
     """
     try:
         conn = supaconn()
@@ -237,17 +293,26 @@ def get_offers_complete():
 
 @st.cache_data(ttl=300)
 def get_events(offer_href=None, sport_name=None, date_start=None, date_end=None):
-    """
-    Load future events from vw_termine_full view.
+    """Load future events from vw_termine_full view.
     
-    WHY: Supabase has a limit on how many rows it returns, so pagination is needed.
+    Supabase has a limit on how many rows it returns, so pagination is needed.
     This function handles pagination by fetching data in chunks of 1000 rows.
     Cached for 300 seconds because events don't change very often.
     
-    HOW: Fetches events in pages, applies direct filters (offer_href, date range),
-    then applies additional filters in Python (sport_name, date_start, date_end).
-    Note: Some filtering is done in Python because Supabase views may not support
-    all filter operations directly. Database queries can fail, so we use try/except.
+    Args:
+        offer_href (str, optional): Filter events by specific offer href.
+        sport_name (str, optional): Filter events by sport name (single sport only).
+        date_start (date, optional): Filter events starting from this date.
+        date_end (date, optional): Filter events up to this date.
+    
+    Returns:
+        list: List of event dictionaries with converted fields, or empty list on error.
+        
+    Note:
+        Fetches events in pages, applies direct filters (offer_href, date range),
+        then applies additional filters in Python (sport_name, date_start, date_end).
+        Some filtering is done in Python because Supabase views may not support
+        all filter operations directly. Database queries can fail, so we use try/except.
     """
     try:
         conn = supaconn()
@@ -302,32 +367,33 @@ def get_events(offer_href=None, sport_name=None, date_start=None, date_end=None)
 
 @st.cache_data(ttl=60, hash_funcs={dict: lambda x: tuple(sorted(x.items())) if x else None})
 def load_and_filter_offers(filters=None, update_session_state=False):
-    """
-    Load and filter offers. ML is automatically applied if offer filters are set.
+    """Load and filter offers. ML is automatically applied if offer filters are set.
     
     This is the unified function for loading and filtering offers. It combines
     data loading, error handling, and filtering (including ML recommendations)
     into a single call.
     
-    IMPORTANT: This function is cached with filters as cache keys. When filters change,
-    Streamlit will automatically invalidate the cache and reload data.
-    
     Args:
-        filters: Optional filters dict from get_filter_values_from_session()
-                 If None or no offer filters set, returns all offers
-                 If offer filters (focus/intensity/setting) are set, applies ML
-        update_session_state: If True, updates st.session_state['sports_data']
+        filters (dict, optional): Filters dict from get_filter_values_from_session().
+            If None or no offer filters set, returns all offers.
+            If offer filters (focus/intensity/setting) are set, applies ML.
+        update_session_state (bool, optional): If True, updates st.session_state['sports_data'].
+            Defaults to False.
     
     Returns:
-        List of offer dictionaries with match_score, or empty list on error
-    
-    Example:
-        # Load all offers (no filters)
-        offers = load_and_filter_offers(update_session_state=True)
+        list: List of offer dictionaries with match_score, or empty list on error.
         
-        # Load and filter with ML
-        filters = get_filter_values_from_session()
-        offers = load_and_filter_offers(filters=filters, update_session_state=True)
+    Note:
+        This function is cached with filters as cache keys. When filters change,
+        Streamlit will automatically invalidate the cache and reload data.
+        
+    Example:
+        >>> # Load all offers (no filters)
+        >>> offers = load_and_filter_offers(update_session_state=True)
+        >>> 
+        >>> # Load and filter with ML
+        >>> filters = get_filter_values_from_session()
+        >>> offers = load_and_filter_offers(filters=filters, update_session_state=True)
     """
     try:
         # Load offers from database
@@ -368,32 +434,33 @@ def load_and_filter_offers(filters=None, update_session_state=False):
 
 @st.cache_data(ttl=60, hash_funcs={dict: lambda x: tuple(sorted(x.items())) if x else None})
 def load_and_filter_events(filters=None, offer_href=None, show_spinner=False):
-    """
-    Load and filter events. Applies filters if provided.
+    """Load and filter events. Applies filters if provided.
     
     This is the unified function for loading and filtering events. It combines
     data loading, error handling, and filtering into a single call.
     
-    IMPORTANT: This function is cached with filters and offer_href as cache keys. When filters
-    change, Streamlit will automatically invalidate the cache and reload data.
-    
     Args:
-        filters: Optional filters dict from get_filter_values_from_session()
-                 If None, returns all events (optionally filtered by offer_href)
-                 If provided, applies event filters
-        offer_href: Optional offer href to filter events for specific offer
-        show_spinner: If True, shows loading spinner (Note: spinner is not cached)
+        filters (dict, optional): Filters dict from get_filter_values_from_session().
+            If None, returns all events (optionally filtered by offer_href).
+            If provided, applies event filters.
+        offer_href (str, optional): Offer href to filter events for specific offer.
+        show_spinner (bool, optional): If True, shows loading spinner. Defaults to False.
+            Note: spinner is not cached.
     
     Returns:
-        List of filtered event dictionaries, or empty list on error
-    
-    Example:
-        # Load all events for a specific offer
-        events = load_and_filter_events(offer_href=selected['href'], show_spinner=True)
+        list: List of filtered event dictionaries, or empty list on error.
         
-        # Load and filter events
-        filters = get_filter_values_from_session()
-        events = load_and_filter_events(filters=filters, offer_href=offer_href, show_spinner=False)
+    Note:
+        This function is cached with filters and offer_href as cache keys. When filters
+        change, Streamlit will automatically invalidate the cache and reload data.
+        
+    Example:
+        >>> # Load all events for a specific offer
+        >>> events = load_and_filter_events(offer_href=selected['href'], show_spinner=True)
+        >>> 
+        >>> # Load and filter events
+        >>> filters = get_filter_values_from_session()
+        >>> events = load_and_filter_events(filters=filters, offer_href=offer_href, show_spinner=False)
     """
     try:
         # Extract filters that get_events() can handle directly to avoid redundant filtering
@@ -437,11 +504,17 @@ def load_and_filter_events(filters=None, offer_href=None, show_spinner=False):
 
 @st.cache_data(ttl=300)
 def group_events_by(field='offer_href'):
-    """
-    Generic function to group events by specified field.
+    """Generic function to group events by specified field.
     
-    WHY: Grouping events by offer_href or sport_name allows efficient lookup
-    without querying the database multiple times. Cached for 300 seconds.
+    Args:
+        field (str, optional): Field name to group by. Defaults to 'offer_href'.
+    
+    Returns:
+        dict: Dictionary with field values as keys and lists of events as values.
+        
+    Note:
+        Grouping events by offer_href or sport_name allows efficient lookup
+        without querying the database multiple times. Cached for 300 seconds.
     """
     events = get_events()
     grouped = defaultdict(list)
@@ -451,31 +524,43 @@ def group_events_by(field='offer_href'):
     return dict(grouped)
 
 def get_events_grouped_by_offer():
-    """
-    Load all events and group them by offer_href for efficient lookup.
+    """Load all events and group them by offer_href for efficient lookup.
     
-    WHY: Wrapper around group_events_by() for backward compatibility.
-    Used when we need to quickly find all events for a specific offer.
+    Returns:
+        dict: Dictionary with offer_href as keys and lists of events as values.
+        
+    Note:
+        Wrapper around group_events_by() for backward compatibility.
+        Used when we need to quickly find all events for a specific offer.
     """
     return group_events_by('offer_href')
 
 def get_events_grouped_by_sport():
-    """
-    Load all events and group them by sport_name for efficient lookup.
+    """Load all events and group them by sport_name for efficient lookup.
     
-    WHY: Wrapper around group_events_by() for backward compatibility.
-    Used when we need to quickly find all events for a specific sport.
+    Returns:
+        dict: Dictionary with sport_name as keys and lists of events as values.
+        
+    Note:
+        Wrapper around group_events_by() for backward compatibility.
+        Used when we need to quickly find all events for a specific sport.
     """
     return group_events_by('sport_name')
 
 
 @st.cache_data(ttl=60)
 def get_user_complete(user_sub):
-    """
-    Load complete user profile from users table.
+    """Load complete user profile from users table.
     
-    WHY: Cached for 60 seconds, as profile rarely changes. Returns all user fields.
-    Database queries can fail, so we use try/except for error handling.
+    Args:
+        user_sub (str): OIDC subject identifier (external user ID).
+    
+    Returns:
+        dict or None: Complete user profile dictionary, or None if not found or on error.
+        
+    Note:
+        Cached for 60 seconds, as profile rarely changes. Returns all user fields.
+        Database queries can fail, so we use try/except for error handling.
     """
     try:
         result = supaconn().table("users").select("*").eq("sub", user_sub).execute()
@@ -490,19 +575,21 @@ def get_user_complete(user_sub):
 
 @st.cache_data(ttl=300)
 def count_by_field(data_source, field, _transform=None, sort_desc=False, default_keys=None, list_field=False):
-    """
-    Generic function to count items by field.
+    """Generic function to count items by field.
     
     Args:
-        data_source: 'events' or 'offers' - determines which data to load
-        field: Field name to count by (e.g., 'location_name', 'intensity')
-        _transform: Optional function to transform field value (e.g., lambda x: parse_datetime(x).hour)
-        sort_desc: If True, sort results by count descending
-        default_keys: Optional list of default keys to include (for weekday/hour)
-        list_field: If True, field contains a list and each item should be counted
+        data_source (str): 'events' or 'offers' - determines which data to load.
+        field (str): Field name to count by (e.g., 'location_name', 'intensity').
+        _transform (callable, optional): Function to transform field value before counting.
+            Example: lambda x: parse_datetime(x).hour
+        sort_desc (bool, optional): If True, sort results by count descending. Defaults to False.
+        default_keys (list, optional): List of default keys to include (for weekday/hour).
+            Keys not present in data will have count 0.
+        list_field (bool, optional): If True, field contains a list and each item should be counted.
+            Defaults to False.
     
     Returns:
-        Dictionary of {value: count}
+        dict: Dictionary mapping field values to counts, or empty dict on error.
     """
     try:
         data = get_events() if data_source == 'events' else get_offers_complete()
@@ -537,7 +624,13 @@ def count_by_field(data_source, field, _transform=None, sort_desc=False, default
 # Backward compatibility wrappers
 @st.cache_data(ttl=300)
 def get_events_by_weekday():
-    """Get count of events grouped by weekday."""
+    """Get count of events grouped by weekday.
+    
+    Returns:
+        dict: Dictionary mapping weekday names to event counts.
+            Keys: 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
+            Values: Count of events for each weekday.
+    """
     from utils.formatting import parse_event_datetime
     weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     return count_by_field(
@@ -548,7 +641,13 @@ def get_events_by_weekday():
 
 @st.cache_data(ttl=300)
 def get_events_by_hour():
-    """Get count of events grouped by hour of day (0-23)."""
+    """Get count of events grouped by hour of day (0-23).
+    
+    Returns:
+        dict: Dictionary mapping hour (0-23) to event counts.
+            Keys: Integers from 0 to 23 representing hours of the day.
+            Values: Count of events starting in each hour.
+    """
     from utils.formatting import parse_event_datetime
     return count_by_field(
         'events', 'start_time',

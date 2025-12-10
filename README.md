@@ -93,9 +93,9 @@ All of the content below is **fully up to date** with the current project struct
 
 **Machine Learning & data**
 
-- scikit‑learn – KNN, StandardScaler
-- pandas, numpy – data wrangling & numeric operations
-- joblib – model persistence
+- scikit‑learn, KNN, StandardScaler
+- pandas, numpy, data wrangling & numeric operations
+- joblib, model persistence
 
 **Visualisation**
 
@@ -103,9 +103,9 @@ All of the content below is **fully up to date** with the current project struct
 
 **Web scraping** (for `.scraper/` scripts)
 
-- requests – HTTP library for fetching web pages
-- beautifulsoup4, lxml – HTML parsing
-- urllib3 – HTTP client utilities
+- requests, HTTP library for fetching web pages
+- beautifulsoup4, lxml, HTML parsing
+- urllib3, HTTP client utilities
 
 See `requirements.txt` for the exact dependency list.
 
@@ -208,8 +208,8 @@ To run these scripts automatically via GitHub Actions you need to:
 
 1. Ensure your Supabase schema is created (see **Database Schema** section below).
 2. In your GitHub repository, go to **Settings → Secrets and variables → Actions → New repository secret** and add:
-   - `SUPABASE_URL` – your Supabase project URL (e.g. `https://mcbbjje...supabase.co`)
-   - `SUPABASE_KEY` – a key that is allowed to write to the tables (`service_role` is simplest, but handle it carefully).
+   - `SUPABASE_URL`, your Supabase project URL (e.g. `https://mcbbjje...supabase.co`)
+   - `SUPABASE_KEY`, a key that is allowed to write to the tables (`service_role` is simplest, but handle it carefully).
 3. Check the workflow file in `.github/workflows/` (e.g. `scraper.yml`) to see which secrets it expects and how often it runs.
 
 The Action will then:
@@ -223,17 +223,17 @@ The Action will then:
 
 The app expects a PostgreSQL database (via Supabase) with at least the following tables/views:
 
-- `users` – user accounts, profile data and stored preferences
-- `sportangebote` – sports offers (base table with focus/setting/intensity features)
-- `sportkurse` – course definitions grouped by course number
-- `kurs_termine` – individual course dates (time, location, cancellation flag)
-- `kurs_trainer` – join table linking courses to trainers (many-to-many)
-- `unisport_locations` – physical locations with coordinates and indoor/outdoor flag
-- `trainer` – trainers with base metadata
-- `etl_runs` – simple ETL bookkeeping table for scraper components
-- `ml_training_data` (view) – feature matrix for the ML recommender
-- `vw_offers_complete` (view) – enriched sports offers with event counts & trainers
-- `vw_termine_full` (view) – enriched upcoming course dates with trainer and location data
+- `users` - user accounts, profile data and stored preferences
+- `sportangebote` - sports offers (base table with focus/setting/intensity features)
+- `sportkurse` - course definitions grouped by course number
+- `kurs_termine` - individual course dates (time, location, cancellation flag)
+- `kurs_trainer` - join table linking courses to trainers (many-to-many)
+- `unisport_locations` - physical locations with coordinates and indoor/outdoor flag
+- `trainer` - trainers with base metadata
+- `etl_runs` - simple ETL bookkeeping table for scraper components
+- `ml_training_data` (view) - feature matrix for the ML recommender
+- `vw_offers_complete` (view) - enriched sports offers with event counts and trainers
+- `vw_termine_full` (view) - enriched upcoming course dates with trainer and location data
 
 ### Creating the schema from this repository
 
@@ -255,7 +255,7 @@ Current (simplified) layout:
 UnisportAI/
 ├── streamlit_app.py    # Main Streamlit application
 ├── utils/              # Utility modules (refactored from root)
-│   ├── __init__.py     # Package exports
+│   ├── __init__.py     # Package documentation (explicit imports used)
 │   ├── auth.py         # Authentication helpers (Streamlit + Google OAuth)
 │   ├── db.py           # Supabase data access layer
 │   ├── filters.py      # Event and offer filtering logic
@@ -291,18 +291,26 @@ UnisportAI/
   - Four main tabs: Sports Overview, Course Dates, My Profile, About
 
 - **`utils/auth.py`**
+<<<<<<< Updated upstream
   - `is_logged_in()` – checks Streamlit user session
   - `handle_logout()` – clears session state and logs out
   - `clear_user_session()` – clears all user-related session state data
   - `check_token_expiry()` – optional expiry check
   - `sync_user_to_supabase()` – creates/updates user row in Supabase
   - `get_user_info_dict()` – collects user info into a dictionary
+=======
+  - `is_logged_in()`, checks Streamlit user session
+  - `handle_logout()`, clears session state and logs out
+  - `check_token_expiry()`, optional expiry check
+  - `sync_user_to_supabase()`, creates/updates user row in Supabase
+>>>>>>> Stashed changes
   - Accessors like `get_user_sub()` and `get_user_email()`
 
 - **`utils/db.py`**
   - Creates a cached Supabase connection via `st-supabase-connection`
   - `supaconn()` – cached connection singleton
   - Provides high‑level query functions:
+<<<<<<< Updated upstream
     - `get_offers_complete()` – load all sports offers
     - `get_events(offer_href)` – load events (optionally filtered by offer)
     - `load_and_filter_offers(filters)` – unified function to load and filter offers with ML
@@ -350,11 +358,42 @@ UnisportAI/
   - `get_match_score_style()` – get CSS style for match score badge
   - `render_user_avatar()` – render user avatar (image or initials)
   - `convert_events_to_table_data()` – convert events to DataFrame format
+=======
+    - `get_offers_complete()`, load all sports offers
+    - `get_events(offer_href)`, load events (optionally filtered by offer)
+    - `load_and_filter_offers(filters)`, unified function to load and filter offers with ML
+    - `load_and_filter_events(filters, offer_href)`, unified function to load and filter events
+    - `get_user_complete(user_sub)`, load user profile
+    - `get_events_grouped_by_offer()`, group events by offer for efficient lookup
+    - `get_events_grouped_by_sport()`, group events by sport for efficient lookup
+    - `get_events_by_weekday()`, analytics: count events by weekday
+    - `get_events_by_hour()`, analytics: count events by hour of day
+    - `get_ml_training_data_cli()`, load ML training data for CLI scripts
+    - `create_or_update_user(user_data)`, create or update user in database
+
+- **`utils/filters.py`**
+  - Event and offer filtering logic
+  - `check_event_matches_filters()`, single event filter validation
+  - `filter_events()`, filter list of events
+  - `filter_offers()`, filter sports offers with ML scoring
+
+- **`utils/ml_utils.py`**
+  - ML model loading and recommendation functions
+  - `load_knn_model()`, load pre-trained KNN model with caching
+  - `build_user_preferences_from_filters()`, convert filters to feature vector
+  - `get_ml_recommendations()`, get ML-based sport recommendations
+
+- **`utils/formatting.py`**
+  - HTML formatting utilities and date/time formatters
+  - `format_intensity_display()`, `format_focus_display()`, display formatters
+  - `parse_event_datetime()`, `format_weekday()`, `format_time_range()`, datetime utilities
+  - `convert_events_to_table_data()`, convert events to DataFrame format
+>>>>>>> Stashed changes
 
 - **`utils/analytics.py`**
   - Analytics visualizations and charts
-  - `render_analytics_section()` – main analytics dashboard with charts
-  - `render_team_contribution_matrix()` – team contribution visualization
+  - `render_analytics_section()`, main analytics dashboard with charts
+  - `render_team_contribution_matrix()`, team contribution visualization
   - ML feature analysis, intensity/setting distributions
 
 - **`ml/`**
@@ -363,9 +402,9 @@ UnisportAI/
 
 - **`.scraper/`**
   - Web scraping scripts for automated data collection
-  - `scrape_sportangebote.py` – main scraper for offers, courses, and dates
-  - `extract_locations_from_html.py` – location data extraction
-  - `update_cancellations.py` – cancellation status updates
+  - `scrape_sportangebote.py`, main scraper for offers, courses, and dates
+  - `extract_locations_from_html.py`, location data extraction
+  - `update_cancellations.py`, cancellation status updates
   - Designed to run via GitHub Actions on a schedule
 
 

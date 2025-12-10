@@ -17,11 +17,26 @@ from utils.db import get_ml_training_data_cli
 # PURPOSE: Test the trained KNN recommender with sample user personas
 
 def test_model():
-    """
-    Test the trained KNN recommender with sample user personas.
+    """Test the trained KNN recommender with sample user personas.
     
-    HOW: Creates test personas with different preferences, queries the model,
+    Creates test personas with different preferences, queries the model,
     and displays recommendations to verify the model works correctly.
+    
+    Test Personas:
+        1. "Fitness Enthusiast": High intensity, Strength + Endurance, Solo
+           - Seeks intense, results-focused solo training sessions
+           - Prioritizes muscle building and cardiovascular fitness
+           - Prefers individual activities with schedule flexibility
+        
+        2. "Wellness Seeker": Relaxation + Flexibility, Low intensity, Duo
+           - Prioritizes gentle movement, stress relief, and partner bonding
+           - Seeks therapeutic benefits over entertainment
+           - Prefers shared activities that strengthen relationships
+    
+    Note:
+        This function loads training data from the database, trains a new
+        recommender instance, and tests it with two different user personas
+        to demonstrate how the model works with various preference combinations.
     """
     print("\n" + "="*60)
     print("KNN SPORT RECOMMENDER - MODEL TESTING")
@@ -42,46 +57,48 @@ def test_model():
     # Test case 1: High intensity, Strength + Endurance, Solo
     print("Test 1: High intensity, Strength + Endurance, Solo")
     print("-" * 60)
-    user_prefs_1 = {  # Test persona: "Fitness Enthusiast" someone seeking intense, results-focused solo training sessions
-        'balance': 0.0,  # Not interested in balance/stability training exercises
-        'flexibility': 0.0,  # Not prioritizing stretching or mobility work
-        'coordination': 0.0,  # Not seeking activities that develop hand-eye coordination or complex movement patterns
-        'relaxation': 0.0,  # Actively avoids low-key, meditative, or stress-relief focused activities
+    # Test persona: "Fitness Enthusiast" - someone seeking intense, results-focused solo training sessions
+    user_prefs_1 = {
+        'balance': 0.0,
+        'flexibility': 0.0,
+        'coordination': 0.0,
+        'relaxation': 0.0,
         'strength': 1.0,  # Primary goal: maximize muscle building and power development
         'endurance': 1.0,  # Secondary goal: improve cardiovascular fitness and stamina
-        'longevity': 0.0,  # Not focused on gentle activities for long-term joint health
+        'longevity': 0.0,
         'intensity': 1.0,  # Seeks maximum exertion, high heart rate, challenging workouts
-        'setting_team': 0.0,  # Prefers not to coordinate with groups or depend on teammates
-        'setting_fun': 0.0,  # Prioritizes results over entertainment value
-        'setting_duo': 0.0,  # Doesn't want partner-dependent activities or couples' exercises
+        'setting_team': 0.0,
+        'setting_fun': 0.0,
+        'setting_duo': 0.0,
         'setting_solo': 1.0,  # Strongly prefers individual activities with complete schedule flexibility
-        'setting_competitive': 0.0  # Not interested in competing against others or keeping score
+        'setting_competitive': 0.0
     }
     
-    recommendations = recommender.get_recommendations(user_prefs_1, top_n=5)  # Query trained ML model to find 5 sports most similar to this user's preferences
+    recommendations = recommender.get_recommendations(user_prefs_1, top_n=5)
     
-    print("\nTop 5 KNN Recommendations:")  # Display header for ML algorithm results
-    for i, rec in enumerate(recommendations, 1):  # Iterate through recommendations with human-friendly numbering starting from 1
-        print(f"{i}. {rec['sport']}: {rec['match_score']}% match")  # Display each recommendation with sport name and ML-calculated similarity percentage
+    print("\nTop 5 KNN Recommendations:")
+    for i, rec in enumerate(recommendations, 1):
+        print(f"{i}. {rec['sport']}: {rec['match_score']}% match")
     
     # Test case 2: Relaxation + Flexibility, Low intensity, Duo
     print("\n" + "="*60)
     print("Test 2: Relaxation + Flexibility, Low intensity, Duo")
     print("-" * 60)
-    user_prefs_2 = {  # Test persona: "Wellness Seeker" someone prioritizing gentle movement, stress relief, and partner bonding
-        'balance': 0.0,  # Not specifically targeting balance or stability improvements
+    # Test persona: "Wellness Seeker" - someone prioritizing gentle movement, stress relief, and partner bonding
+    user_prefs_2 = {
+        'balance': 0.0,
         'flexibility': 1.0,  # Primary goal: increase range of motion, reduce stiffness, improve mobility
-        'coordination': 0.0,  # Not seeking complex movement patterns or skill development
+        'coordination': 0.0,
         'relaxation': 1.0,  # Major priority: stress reduction, mental calm, mindfulness integration
-        'strength': 0.0,  # Actively avoids muscle-building or resistance training
-        'endurance': 0.0,  # Not interested in cardiovascular conditioning or stamina building
-        'longevity': 0.0,  # Not specifically focused on long-term health maintenance
+        'strength': 0.0,
+        'endurance': 0.0,
+        'longevity': 0.0,
         'intensity': 0.33,  # Prefers gentle, low-impact activities (33% = mild exertion, sustainable pace)
-        'setting_team': 0.0,  # Avoids large group dynamics or team coordination requirements
-        'setting_fun': 0.0,  # Values therapeutic benefits over entertainment aspect
-        'setting_duo': 1.0,  # Strongly prefers shared activities that strengthen relationships and provide mutual support
-        'setting_solo': 0.0,  # Dislikes exercising alone, seeks social connection and accountability
-        'setting_competitive': 0.0  # Completely avoids pressure, comparison, or performance metrics
+        'setting_team': 0.0,
+        'setting_fun': 0.0,
+        'setting_duo': 1.0,  # Strongly prefers shared activities that strengthen relationships
+        'setting_solo': 0.0,
+        'setting_competitive': 0.0
     }
     
     recommendations = recommender.get_recommendations(user_prefs_2, top_n=5)
