@@ -131,4 +131,23 @@ The complete schema is defined in `schema.sql` and should be run in a fresh Supa
 
 This project was developed as part of the "Fundamentals and Methods of Computer Science" course at the University of St. Gallen (HSG).
 
-Team members and their contributions are documented in the application's analytics section.
+## Team & Contributions
+
+This project was developed by a team of 5 students as part of the "Fundamentals and Methods of Computer Science" course:
+
+### Team Members
+- **[Tamara Nessler](https://www.linkedin.com/in/tamaranessler/)** - Project organization & planning, requirements mapping & prototyping
+- **[Till Banerjee](https://www.linkedin.com/in/till-banerjee/)** - Machine learning, testing & bug-fixing, project organization & planning
+- **[Sarah Bugg](https://www.linkedin.com/in/sarah-bugg/)** - Video production, project organization & planning, requirements mapping & prototyping
+- **[Antonia Büttiker](https://www.linkedin.com/in/antonia-büttiker-895713254/)** - Video production, project organization & planning, requirements mapping & prototyping
+- **[Luca Hagenmayer](https://www.linkedin.com/in/lucahagenmayer/)** - Frontend development, backend development, testing & bug-fixing
+
+### Key Contributions
+- **Frontend Development**: Streamlit UI, user interface design, data visualization
+- **Backend Development**: Database design, API integration, data processing
+- **Machine Learning**: KNN recommender system, feature engineering, model training
+- **Project Organization**: Planning, requirements analysis, team coordination
+- **Testing & Quality**: Bug fixing, code documentation, quality assurance
+- **Content Creation**: Video presentation, project documentation
+
+Detailed contribution matrices for each project phase are available in the application's analytics section.
